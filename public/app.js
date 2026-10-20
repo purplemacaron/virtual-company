@@ -1,6 +1,30 @@
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const api = (m, u, b) => fetch(u, { method: m, headers: { 'Content-Type': 'application/json' }, body: b ? JSON.stringify(b) : undefined }).then(r => r.json().catch(() => ({})));
+const mask = k => '••••' + String(k).slice(-4);
+let toastT = null;
+function toast(msg, kind) {
+  let el = $('#toast');
+  if (!el) { el = document.createElement('div'); el.id = 'toast'; el.className = 'toast'; document.body.appendChild(el); }
+  el.textContent = msg;
+  el.classList.toggle('err', kind === 'err');
+  el.classList.add('on');
+  clearTimeout(toastT);
+  toastT = setTimeout(() => el.classList.remove('on'), kind === 'err' ? 6000 : 3000);
+}
+// 실패를 삼키면 "저장이 안 됐다"가 원인도 없이 되풀이된다 → 상태 코드와 오류 메시지를 보여준다
+async function api(m, u, b) {
+  let r, d = {};
+  try {
+    r = await fetch(u, { method: m, headers: { 'Content-Type': 'application/json' }, body: b ? JSON.stringify(b) : undefined });
+    d = await r.json().catch(() => ({}));
+  } catch { toast('서버에 연결할 수 없습니다. npm start가 실행 중인지 확인하세요.', 'err'); return { error: '연결 실패' }; }
+  if (!r.ok) {
+    const msg = d.error || `HTTP ${r.status}`;
+    toast(`${m} ${u} 실패 · ${msg}`, 'err');
+    return { ...d, error: msg };
+  }
+  return d;
+}
 let S = null, tab = 'office', chan = 'general';
 const screens = {};
 const emp = id => S.employees.find(e => e.id === id);
@@ -167,7 +191,7 @@ const updaters = {
   },
   settings() {
     $('#mcpst').textContent = Object.entries(S.mcpStatus || {}).map(([k, v]) => `${k}: ${v}`).join('\n') || '연결된 MCP 서버 없음';
-    // 저장 응답은 WS 상태로 되아오므로, 폼이 그 전 값을 붙들고 있으면 안 된다.
+    // 저장 응답은 WS 상태로 되돌아오므로, 폼이 그 전 값을 붙들고 있으면 안 된다.
     // 단 사용자가 아직 입력 중인 항목은 덮어쓰지 않는다.
     const a = S.settings.app || {};
     const fill = (sel, v) => { const el = $(sel); if (el && document.activeElement !== el) el.value = v; };
@@ -207,57 +231,68 @@ document.addEventListener('click', async e => {
   else if (t.id === 'newCh') { const n = prompt('채널 이름'); if (n) api('POST', '/api/channels', { name: n }); }
   else if (t.id === 'saveRanks') api('PUT', '/api/settings', { ranks: $('#ranks').value.split('\n').map(s => s.trim()).filter(Boolean) });
   else if (t.id === 'saveCfg') {
+    const pcOn = $('#cfgComputer').checked;
     await api('PUT', '/api/settings', { app: {
       maxSteps: +$('#cfgSteps').value || 8, startUrl: $('#cfgStart').value.trim(),
-      headless: $('#cfgHeadless').checked, computerEnabled: $('#cfgComputer').checked,
+      headless: $('#cfgHeadless').checked, computerEnabled: pcOn,
     } });
-    alert('운영 설정이 저장되었습니다. 헤드리스 브라우저 설정은 다음 브라우저 사용부터 반영됩니다.'); build();
+    toast(`운영 설정 저장 완료 · PC 조작 ${pcOn ? '허용' : '차단'}\n헤드리스 브라우저 설정은 다음 브라우저 사용부터 반영됩니다.`); build();
   }
   else if (t.id === 'clearLogs') api('DELETE', '/api/logs');
   else if (t.id === 'saveSet') {
-    const keys = {}; document.querySelectorAll('[data-key]').forEach(i => { if (i.value) keys[i.dataset.key] = i.value; i.value = ''; });
-    await api('PUT', '/api/settings', { keys, companyName: $('#cname').value, userName: $('#uname').value }); alert('저장되었습니다'); build();
+    const keys = {}; document.querySelectorAll('[data-key]').forEach(i => { if (i.value) { keys[i.dataset.key] = i.value; i.value = ''; } });
+    const n = Object.keys(keys).length;
+    await api('PUT', '/api/settings', { keys, companyName: $('#cname').value, userName: $('#uname').value });
+    toast(n ? `전역 설정 저장 완료 · 키 ${n}개 갱신 (뒷부분 ${Object.values(keys).map(mask).join(' / ')}\n아래 칸에 •••• 표시로 남습니다)`
+      : '회사 이름·내 이름 저장 완료 · 새로 입력된 키는 없습니다');
+    build();
   }
   else if (t.dataset.clearkey) {
-    if (confirm(`${provLabel(t.dataset.clearkey) || t.dataset.clearkey}에 저장된 키를 삭제할까요?`)) {
-      await api('PUT', '/api/settings', { clearKeys: [t.dataset.clearkey] }); build();
+    const label = provLabel(t.dataset.clearkey) || t.dataset.clearkey;
+    if (confirm(`${label}에 저장된 키를 삭제할까요?`)) {
+      await api('PUT', '/api/settings', { clearKeys: [t.dataset.clearkey] });
+      toast(`${label} 전역 키를 삭제했습니다`); build();
     }
   }
   else if (t.id === 'saveSearch') {
-    const keys = {}; document.querySelectorAll('[data-key]').forEach(i => { if (i.value) keys[i.dataset.key] = i.value; i.value = ''; });
+    const keys = {}; document.querySelectorAll('[data-key]').forEach(i => { if (i.value) { keys[i.dataset.key] = i.value; i.value = ''; } });
     await api('PUT', '/api/settings', { keys, search: {
       provider: $('#searchProvider').value, googleCx: $('#gxCx').value.trim(), searxngUrl: $('#gxSearx').value.trim(),
     } });
-    alert('웹 검색 설정이 저장되었습니다'); build();
+    toast(`웹 검색 설정 저장 완료 · 기본 엔진 ${$('#searchProvider').value}`); build();
   }
   else if (t.id === 'searchTest') {
     const out = $('#searchOut'), q = $('#searchQ').value.trim();
-    if (!q) return alert('검색어를 입력하세요');
+    if (!q) { toast('검색어를 입력하세요', 'err'); return; }
     out.textContent = '검색 중…';
     const r = await api('POST', '/api/search/test', { query: q, engine: $('#searchProvider').value });
     out.textContent = r.error ? '실패: ' + r.error : r.result;
   }
   else if (t.id === 'mcpAdd') {
+    const name = $('#mcpName').value.trim();
     const r = await api('POST', '/api/mcp/servers', {
-      name: $('#mcpName').value.trim(), command: $('#mcpCmd').value.trim(),
+      name, command: $('#mcpCmd').value.trim(),
       args: $('#mcpArgs').value.trim(), url: $('#mcpUrl').value.trim(), env: $('#mcpEnv').value.trim(),
     });
-    if (r.error) alert('추가 실패: ' + r.error);
-    else alert('MCP 서버가 등록되고 연결되었습니다');
+    if (!r.error) toast(`${name} 서버 등록 완료 · ${S.mcpStatus?.[name] || '연결 시도 중'}`);
     build();
   }
   else if (t.dataset.mcpdel) {
     if (!confirm(`${t.dataset.mcpdel} 서버 연결을 끊고 설정에서 삭제할까요?`)) return;
     const r = await api('DELETE', '/api/mcp/servers/' + encodeURIComponent(t.dataset.mcpdel));
-    if (r.error) alert('삭제 실패: ' + r.error);
+    if (!r.error) toast(`${t.dataset.mcpdel} 서버를 삭제했습니다`);
     build();
   }
   else if (t.dataset.mcpgrant) {
-    await api('POST', '/api/mcp/grant', { name: t.dataset.mcpgrant });
-    alert(`${t.dataset.mcpgrant} 서버를 모든 직원의 허용 목록에 추가했습니다`);
+    const r = await api('POST', '/api/mcp/grant', { name: t.dataset.mcpgrant });
+    if (!r.error) toast(`${t.dataset.mcpgrant} 서버를 모든 직원의 허용 목록에 추가했습니다`);
   }
-  else if (t.id === 'saveMcp') { try { JSON.parse($('#mcp').value); api('PUT', '/api/settings', { mcpConfig: $('#mcp').value }); } catch { alert('JSON 형식이 올바르지 않습니다'); } }
-  else if (t.id === 'recon') api('POST', '/api/mcp/reconnect');
+  else if (t.id === 'saveMcp') {
+    try { JSON.parse($('#mcp').value); } catch { toast('JSON 형식이 올바르지 않습니다', 'err'); return; }
+    await api('PUT', '/api/settings', { mcpConfig: $('#mcp').value });
+    toast('MCP 설정 저장 완료 · 재연결을 시도합니다');
+  }
+  else if (t.id === 'recon') { await api('POST', '/api/mcp/reconnect'); toast('MCP 재연결을 시도했습니다'); }
 });
 
 // 프리셋을 고르면 폼이 채워지고, 서버 활성 토글은 즉시 재연결로 이어진다
@@ -292,13 +327,16 @@ function editEmp(e) {
     <label>직급</label><select id="f_rank">${S.ranks.map(r => `<option ${r === x.rank ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select>
     <label>직무</label><input id="f_role" value="${esc(x.role)}">
     <label>AI 제공사</label><select id="f_provider">${providerOptions(x.provider)}</select>
-    <label>모델 ID</label><input id="f_model" value="${esc(x.model)}" placeholder="${esc(provs()[x.provider]?.hint || '모델 이름')}" autocomplete="off">
+    <label>모델 ID</label>
+    <div class="kline"><input id="f_model" value="${esc(x.model)}" placeholder="${esc(provs()[x.provider]?.hint || '모델 이름')}" autocomplete="off"><button class="x" id="f_modelList" type="button">모델 목록 확인</button></div>
+    <select id="f_modelPick" hidden></select>
     <div class="status" id="f_modelHint">${esc(provs()[x.provider]?.hint || '')}</div>
     <label>Base URL (비우면 제공사 기본값 · 로컬/커스텀은 직접 입력)</label>
     <input id="f_baseUrl" value="${esc(x.baseUrl || '')}" placeholder="${esc(provs()[x.provider]?.baseURL || 'http://localhost:11434/v1')}" autocomplete="off">
     <label id="f_keyLabel">이 직원의 개인 API 키 (${provLabel(x.provider)})</label>
-    <input id="f_apiKey" type="password" autocomplete="new-password" placeholder="${esc(x.keyHint || keyHint(x.provider))}">
-    <div class="status">${e ? (x.hasKey ? `개인 키 설정됨 · ${esc(x.keyHint)}` : '전역 기본 키를 사용하고 있습니다') : '채용 후에도 언제든 바꿀 수 있습니다'}${e && x.hasKey ? ' · <label style="display:inline"><input type="checkbox" id="f_clearKey"> 개인 키 삭제</label>' : ''}</div>
+    <div class="kline"><input id="f_apiKey" type="password" autocomplete="new-password" placeholder="${esc(x.keyHint || keyHint(x.provider))}"><button class="x" id="f_keyEye" type="button">표시</button></div>
+    <div class="status" id="f_keyStatus"></div>
+    ${e && x.hasKey ? '<label style="display:flex;align-items:center;gap:7px;margin-top:6px;font-size:12px"><input type="checkbox" id="f_clearKey" style="width:auto"> 개인 키 삭제하고 전역 기본 키로 돌리기</label>' : ''}
     <label>색상</label><input id="f_color" type="color" value="${x.color}" style="height:40px;padding:4px">
     <label>성격 · 업무 지침</label><textarea id="f_persona">${esc(x.persona)}</textarea>
     <label>사용 가능한 도구</label><div class="checks">${Object.entries(TOOLS).map(([k, l]) => `<label><input type="checkbox" data-tool="${k}" ${(k === 'mcp' ? mcpOn : !!t[k]) ? 'checked' : ''}>${l}</label>`).join('')}</div>
@@ -311,26 +349,79 @@ function editEmp(e) {
   const close = () => $('#modal').classList.add('hidden');
   $('#m_close').onclick = close;
   // 제공사를 고르면 그 제공사의 모델 예시·기본 Base URL·키 안내가 따라온다
+  const keyBox = $('#f_apiKey'), clearBox = $('#f_clearKey'), keyStatus = $('#f_keyStatus');
+  const baseKeyStatus = e
+    ? (x.hasKey ? `개인 키 설정됨 · ${x.keyHint} · 이 직원은 이 키를 우선 사용합니다`
+      : x.usingGlobalKey ? '개인 키 없음 · 설정 탭의 전역 기본 키를 사용합니다'
+      : '키 없음 · 이대로 두면 업무 시작 시 키 오류가 납니다')
+    : '키를 비우면 설정 탭의 전역 기본 키를 사용합니다 · 채용 후에도 언제든 바꿀 수 있습니다';
+  const syncKey = () => {
+    if (clearBox?.checked) keyStatus.textContent = '저장하면 이 직원의 개인 키가 삭제되고 전역 기본 키로 돌아갑니다';
+    else if (keyBox.value.trim()) keyStatus.textContent = `새 키 입력됨 · 뒷부분 ${mask(keyBox.value.trim())} · 저장 후 이 직원부터 사용됩니다`;
+    else keyStatus.textContent = baseKeyStatus;
+  };
+  keyBox.oninput = syncKey;
+  if (clearBox) clearBox.onchange = syncKey;
+  syncKey();
+  $('#f_keyEye').onclick = ev => {
+    const show = keyBox.type === 'password';
+    keyBox.type = show ? 'text' : 'password';
+    ev.target.textContent = show ? '가리기' : '표시';
+  };
   $('#f_provider').onchange = ev => {
     const p = provs()[ev.target.value] || {};
     $('#f_modelHint').textContent = p.hint || '';
     $('#f_model').placeholder = p.hint || '모델 이름';
     $('#f_baseUrl').placeholder = p.baseURL || 'http://localhost:11434/v1';
     $('#f_keyLabel').textContent = `이 직원의 개인 API 키 (${p.label || ev.target.value})`;
-    $('#f_apiKey').placeholder = keyHint(ev.target.value);
+    keyBox.placeholder = keyHint(ev.target.value);
+    const pick = $('#f_modelPick'); pick.hidden = true; pick.innerHTML = '';   // 다른 제공사의 목록이 남으면 안 된다
   };
-  $('#m_save').onclick = async () => {
+  // 제공사에 실제로 등록된 모델 ID를 가져온다 — 오타가 만드는 404를 눈으로 고르게
+  $('#f_modelList').onclick = async () => {
+    const btn = $('#f_modelList'), hint = $('#f_modelHint'), pick = $('#f_modelPick');
+    btn.disabled = true; btn.textContent = '조회 중…';
+    const r = await api('POST', '/api/models', {
+      provider: $('#f_provider').value, baseUrl: $('#f_baseUrl').value.trim(),
+      apiKey: keyBox.value.trim(), empId: e?.id,
+    });
+    btn.disabled = false; btn.textContent = '모델 목록 확인';
+    pick.hidden = true; pick.innerHTML = '';
+    if (r.error) { hint.textContent = '모델 목록을 가져오지 못했습니다: ' + r.error; return; }
+    const ids = r.models || [], cur = $('#f_model').value.trim();
+    if (!ids.length) { hint.textContent = '이 엔드포인트는 모델 목록을 제공하지 않습니다. 모델 ID를 직접 입력하세요.'; return; }
+    pick.innerHTML = `<option value="">목록에서 고르기 (${ids.length}개) · 현재 입력: ${esc(cur || '없음')}</option>`
+      + ids.map(id => `<option${id === cur ? ' selected' : ''}>${esc(id)}</option>`).join('');
+    pick.hidden = false;
+    hint.textContent = ids.includes(cur)
+      ? `${provLabel($('#f_provider').value)}에 이 모델이 있습니다 (${ids.length}개 중)`
+      : `현재 입력한 "${cur}"은(는) 제공사 목록에 없습니다. 아래에서 골라 교체하세요 (${ids.length}개)`;
+  };
+  $('#f_modelPick').onchange = ev => { if (ev.target.value) $('#f_model').value = ev.target.value; };
+
+  const save = async () => {
     const body = { tools: {} };
     ['name', 'rank', 'role', 'provider', 'model', 'baseUrl', 'color', 'persona'].forEach(k => body[k] = $('#f_' + k).value.trim());
     document.querySelectorAll('[data-tool]').forEach(c => body.tools[c.dataset.tool] = c.checked);
     const grant = !body.tools.mcp ? [] : (!$('#mcpAll') || $('#mcpAll').checked) ? 'all'
       : [...document.querySelectorAll('[data-mcp]')].filter(c => c.checked).map(c => c.dataset.mcp);
     body.tools.mcp = grant;
-    if (!body.name || !body.model) return alert('이름과 모델은 필수입니다');
-    const keyBox = $('#f_apiKey'), clearBox = $('#f_clearKey');
+    if (!body.name || !body.model) { toast('이름과 모델 ID는 반드시 채워야 합니다', 'err'); return; }
     if (clearBox?.checked) body.apiKey = '';
     else if (keyBox.value.trim()) body.apiKey = keyBox.value.trim();
-    await api(e ? 'PUT' : 'POST', '/api/employees' + (e ? '/' + e.id : ''), body); close();
+    const r = await api(e ? 'PUT' : 'POST', '/api/employees' + (e ? '/' + e.id : ''), body);
+    if (r.error) return;                        // 실패 원인은 api()가 이미 토스트로 보여준다
+    const keyLine = body.apiKey === '' ? '개인 키 삭제 완료 · 전역 기본 키 사용'
+      : body.apiKey ? `개인 키 저장 완료 · 뒷부분 ${mask(body.apiKey)}`
+      : x.hasKey ? `개인 키 그대로 유지 · ${x.keyHint}`
+      : x.usingGlobalKey ? '전역 기본 키 사용 중' : '키 없음 · 전역 키를 넣거나 개인 키를 저장하세요';
+    toast(`${body.name}님 ${e ? '정보 저장 완료' : '채용 완료'} · 서버에 반영되었습니다\n${keyLine}`);
+    close();
+  };
+  $('#m_save').onclick = save;
+  $('#sheet').onkeydown = ev => {                   // Enter = 저장
+    if (ev.key !== 'Enter' || ev.target.matches('textarea,select,button')) return;
+    ev.preventDefault(); save();
   };
   // 서버 목록은 MCP 마스터 아래에만 의미가 있다. 꺼진 상태에서 고른 선택이
   // 저장 때 조용히 사라지는 대신, 고르면 마스터가 같이 켜지게 한다.
@@ -349,7 +440,7 @@ function editEmp(e) {
   syncMcp();
   if (e) {
     $('#m_del').onclick = async () => { if (confirm(`${e.name}님을 해고할까요?`)) { await api('DELETE', '/api/employees/' + e.id); close(); } };
-    $('#m_reset').onclick = async () => { await api('POST', '/api/employees/' + e.id + '/reset'); alert('기억을 초기화했습니다'); };
+    $('#m_reset').onclick = async () => { const r = await api('POST', '/api/employees/' + e.id + '/reset'); if (!r.error) toast(`${e.name}님의 기억과 대기 중인 메시지를 초기화했습니다`); };
   }
 }
 $('#modal').onclick = e => { if (e.target.id === 'modal') $('#modal').classList.add('hidden'); };
