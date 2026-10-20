@@ -1,8 +1,9 @@
 import express from 'express';
 import http from 'http';
 import { WebSocketServer } from 'ws';
-import { state, changed, publicState, onEvent, screens, uid, postMessage, leader } from './store.js';
+import { state, changed, publicState, onEvent, screens, uid, postMessage, leader, flush } from './store.js';
 import { startEngine, abortAll } from './engine.js';
+import { listModels } from './llm.js';
 import { connectMcp, closeAll, resetBrowser, testSearch, mcpServersObj, writeMcpServers } from './tools.js';
 
 const app = express();
@@ -136,6 +137,18 @@ app.post('/api/search/test', async (req, res) => {
   catch (e) { res.status(502).json({ error: String(e.message || e) }); }
 });
 
+// 제공사별 실제 모델 ID 목록 — 오타 404를 고르는 가장 빠른 길
+app.post('/api/models', async (req, res) => {
+  const provider = String(req.body?.provider || 'custom');
+  const baseUrl = String(req.body?.baseUrl || '').trim();
+  const typed = String(req.body?.apiKey || '');
+  // 평문 키를 되돌려 줄 수 없으니 마스킹 값은 "저장된 키 그대로"로 해석한다
+  const saved = state.employees.find(x => x.id === req.body?.empId)?.apiKey || '';
+  const apiKey = typed && !isMasked(typed) ? typed.trim() : saved;
+  try { res.json({ models: await listModels({ provider, baseUrl, keys: state.settings.keys, apiKey }) }); }
+  catch (e) { res.status(502).json({ error: String(e.message || e) }); }
+});
+
 app.put('/api/company', (req, res) => {
   if (typeof req.body.goal === 'string') state.company.goal = req.body.goal;
   if (req.body.name) state.company.name = req.body.name;
@@ -221,4 +234,8 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Virtual Company → http://localhost:${PORT}`));
 startEngine();
 connectMcp();
-process.on('SIGINT', async () => { await closeAll(); process.exit(0); });
+// 종료 전 대기 중인 저장을 반드시 반영한다 (안 그러면 방금 저장한 키/설정이 유실)
+async function shutdown() { flush(); await closeAll(); process.exit(0); }
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
+process.on('exit', flush);

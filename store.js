@@ -84,7 +84,14 @@ export const maskKey = k => k ? '••••' + k.slice(-4) : '';
 let pushT = null, saveT = null;
 export function changed() {
   if (!pushT) pushT = setTimeout(() => { pushT = null; emit({ type: 'state', state: publicState() }); }, 120);
-  if (!saveT) saveT = setTimeout(() => { saveT = null; fs.writeFile(FILE, JSON.stringify(state), () => {}); }, 1500);
+  if (!saveT) saveT = setTimeout(() => { saveT = null; fs.writeFile(FILE, JSON.stringify(state), e => { if (e) console.error('data.json 저장 실패:', e.message); }); }, 600);
+}
+
+// 종료 직전 대기 중인 저장까지 확실히 쓴다. 이 걸림없면 창을 강제로 닫을 때 방금 넣은 API 키가 사라진다.
+export function flush() {
+  clearTimeout(saveT); saveT = null;
+  try { fs.writeFileSync(FILE, JSON.stringify(state)); }
+  catch (e) { console.error('data.json 저장 실패:', e.message); }
 }
 
 export function publicState() {
