@@ -12,7 +12,7 @@ export const onEvent = fn => listeners.add(fn);
 export const emit = msg => listeners.forEach(fn => fn(msg));
 
 function emp(name, rank, role, provider, model, tools, persona, color) {
-  return { id: uid(), name, rank, role, provider, model, baseUrl: '', tools, persona, color, apiKey: '',
+  return { id: uid(), name, rank, role, provider, model, baseUrl: '', tools, persona, color, apiKey: '', avatar: '',
     status: 'idle', activity: '대기 중', inbox: [], memory: [] };
 }
 
@@ -49,7 +49,7 @@ function defaults() {
         '문서 정리, 요약, 간단한 조사 업무를 빠르게 처리한다.', '#d97706'),
     ],
     tasks: [],
-    channels: [{ id: 'general', name: '전체' }, { id: 'random', name: '잡담' }],
+    channels: [{ id: 'general', name: '전체', members: [] }, { id: 'random', name: '잡담', members: [] }],
     messages: [],
     logs: [],
   };
@@ -65,11 +65,14 @@ function load() {
     s.settings.app = { ...d.settings.app, ...(s.settings.app || {}) };
     s.settings.mcpConfig ||= d.settings.mcpConfig;
     s.employees.forEach(e => {
-      e.status = 'idle'; e.activity = '대기 중'; e.inbox ||= []; e.memory ||= []; e.apiKey ||= ''; e.baseUrl ||= '';
+      e.status = 'idle'; e.activity = '대기 중'; e.inbox ||= []; e.memory ||= []; e.apiKey ||= ''; e.baseUrl ||= ''; e.avatar ||= '';
       // 이전 버전의 mcp true/false를 서버 이름 목록으로 승격
       if (e.tools?.mcp === true) e.tools.mcp = 'all';
       else if (e.tools && !Array.isArray(e.tools.mcp)) e.tools.mcp = [];
     });
+    // 멤버가 있는 채널이 곧 팀이다. 기존 채널은 멤버 없는 일반 채널로 남는다.
+    s.channels ||= [];
+    s.channels.forEach(c => { c.members ||= []; });
     s.tasks.forEach(t => { if (t.status === 'doing') t.status = 'todo'; });
     return s;
   } catch { return defaults(); }
@@ -123,6 +126,9 @@ export const nameOf = id => id === 'user' ? state.user.name : id === 'system' ? 
 export const rankIdx = e => { const i = state.ranks.indexOf(e.rank); return i < 0 ? 99 : i; };
 export const leader = () => [...state.employees].sort((a, b) => rankIdx(a) - rankIdx(b))[0];
 export const dmChannel = (a, b) => 'dm:' + [a, b].sort().join(':');
+// 멤버가 1명 이상인 채널이 팀이다. 직원의 소속은 채널에서 역산한다(중복 저장이 없다).
+export const teamChannels = () => state.channels.filter(c => c.members?.length);
+export const teamsOf = id => state.channels.filter(c => c.members?.includes(id)).map(c => c.name);
 
 export function addLog(empId, text, kind = 'info') {
   state.logs.push({ id: uid(), ts: Date.now(), empId, text: String(text).slice(0, 600), kind });

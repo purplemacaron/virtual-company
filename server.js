@@ -19,15 +19,30 @@ wss.on('connection', ws => {
 });
 
 const ok = res => res.json({ ok: true });
-const EMP_FIELDS = ['name', 'rank', 'role', 'provider', 'model', 'baseUrl', 'persona', 'color', 'tools'];
+const EMP_FIELDS = ['name', 'rank', 'role', 'provider', 'model', 'baseUrl', 'persona', 'color', 'tools', 'avatar'];
+// 사진은 브라우저에서 128px로 줄인 data URL만 받는다 — 임의 텍스트를 data.json에 박아넣는 통로를 막는다
+const AVATAR = /^data:image\/(?:jpeg|png|webp|gif);base64,[A-Za-z0-9+/=]{1,300000}$/;
 // 마스킹된 값(••••)은 "변경 없음"으로 취급해 클라이언트에 평문 키를 내려보내지 않는다
 const isMasked = v => typeof v === 'string' && v.startsWith('••••');
 const pick = o => {
   const out = Object.fromEntries(EMP_FIELDS.filter(k => o[k] !== undefined).map(k => [k, o[k]]));
   if (out.baseUrl !== undefined) out.baseUrl = String(out.baseUrl).trim();
   if (out.model !== undefined) out.model = String(out.model).trim();
+  if (out.avatar !== undefined) out.avatar = AVATAR.test(String(out.avatar)) ? String(out.avatar) : '';
   return out;
 };
+// 직원 시트의 팀 체크가 정답이다. 멤버십은 채널에만 저장하고 여기서 맞춘다(전체는 모든 회사 채널).
+const syncTeams = (e, teamIds) => {
+  if (!Array.isArray(teamIds)) return;
+  const ids = new Set(teamIds.map(String));
+  for (const c of state.channels) {
+    if (c.id === 'general') continue;
+    const has = c.members.includes(e.id);
+    if (ids.has(c.id) && !has) c.members.push(e.id);
+    if (!ids.has(c.id) && has) c.members = c.members.filter(id => id !== e.id);
+  }
+};
+const knownMembers = v => Array.isArray(v) ? state.employees.filter(e => v.includes(e.id)).map(e => e.id) : [];
 
 app.get('/api/state', (req, res) => res.json(publicState()));
 
@@ -172,20 +187,25 @@ app.post('/api/company/pause', (req, res) => {
 });
 
 app.post('/api/employees', (req, res) => {
-  const e = { id: uid(), status: 'idle', activity: '대기 중', inbox: [], memory: [], apiKey: '',
+  const e = { id: uid(), status: 'idle', activity: '대기 중', inbox: [], memory: [], apiKey: '', avatar: '',
     tools: { web: true, browser: false, computer: false, mcp: [] }, color: '#4f46e5', ...pick(req.body) };
   if (typeof req.body.apiKey === 'string' && !isMasked(req.body.apiKey)) e.apiKey = req.body.apiKey.trim();
-  state.employees.push(e); changed(); res.json(publicState().employees.find(x => x.id === e.id));
+  state.employees.push(e);
+  syncTeams(e, req.body.teams);
+  changed(); res.json(publicState().employees.find(x => x.id === e.id));
 });
 app.put('/api/employees/:id', (req, res) => {
   const e = state.employees.find(x => x.id === req.params.id);
   if (!e) return res.status(404).end();
   Object.assign(e, pick(req.body));
   if (typeof req.body.apiKey === 'string' && !isMasked(req.body.apiKey)) e.apiKey = req.body.apiKey.trim();
+  syncTeams(e, req.body.teams);
   changed(); ok(res);
 });
 app.delete('/api/employees/:id', (req, res) => {
-  state.employees = state.employees.filter(x => x.id !== req.params.id); changed(); ok(res);
+  state.employees = state.employees.filter(x => x.id !== req.params.id);
+  state.channels.forEach(c => { c.members = (c.members || []).filter(id => id !== req.params.id); });
+  changed(); ok(res);
 });
 app.post('/api/employees/:id/reset', (req, res) => {
   const e = state.employees.find(x => x.id === req.params.id);
@@ -214,18 +234,22 @@ app.post('/api/messages', (req, res) => {
 app.post('/api/channels', (req, res) => {
   const name = String(req.body.name || '').trim();
   if (!name) return res.status(400).end();
-  const c = { id: uid(), name }; state.channels.push(c); changed(); res.json(c);
+  const c = { id: uid(), name, members: knownMembers(req.body.members) };
+  state.channels.push(c); changed(); res.json(c);
 });
 app.put('/api/channels/:id', (req, res) => {
   const c = state.channels.find(x => x.id === req.params.id);
   const name = String(req.body.name || '').trim();
   if (!c || !name) return res.status(400).json({ error: '채널 또는 이름이 올바르지 않습니다' });
-  c.name = name; changed(); ok(res);
+  c.name = name;
+  // "전체"는 전원 고정 — 멤버를 걸면 팀 채널이 아니게 된다
+  if (Array.isArray(req.body.members) && c.id !== 'general') c.members = knownMembers(req.body.members);
+  changed(); ok(res);
 });
 app.delete('/api/channels/:id', (req, res) => {
   state.channels = state.channels.filter(x => x.id !== req.params.id);
   state.messages = state.messages.filter(m => m.channel !== req.params.id);
-  if (req.params.id === 'general') state.channels.unshift({ id: 'general', name: '전체' });
+  if (req.params.id === 'general') state.channels.unshift({ id: 'general', name: '전체', members: [] });
   changed(); ok(res);
 });
 app.delete('/api/logs', (req, res) => { state.logs = []; changed(); ok(res); });

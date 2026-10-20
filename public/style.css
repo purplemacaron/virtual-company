@@ -112,3 +112,44 @@ pre.out{white-space:pre-wrap;word-break:break-word;max-height:240px;overflow:aut
 .toast.on{opacity:1;transform:translateX(-50%)}
 .toast.err{background:#b42318}
 @media (prefers-reduced-motion:reduce){.toast{transition:none}}
+
+/* 아이콘 버튼 — 글자 칸이 좁아지므로 도형 크기를 고정하고 라벨은 툴팁에 둔다 */
+.ib{display:inline-grid;place-items:center;width:36px;height:36px;padding:0;flex:none}
+.ib .ic{display:block}
+button:disabled{opacity:.45;cursor:default}
+button:focus-visible,.ib:focus-visible{outline:2px solid #111;outline-offset:2px}
+button.lbl{display:inline-flex;align-items:center;gap:6px}
+.tabs button{display:grid;place-items:center;width:42px;height:38px;border-radius:10px}
+.tabs button:hover{color:var(--text)}
+.run{width:44px;height:42px;padding:0;border-radius:12px;display:grid;place-items:center;flex:none}
+.task .ib.del{float:right;width:28px;height:28px;border:none;background:none;color:var(--sub)}
+.btns .ib:last-child{margin-left:0}
+
+/* 직원 사진 */
+.av.hasimg{overflow:hidden;background:none}
+.av img,.head img{width:100%;height:100%;object-fit:cover;display:block;border-radius:50%}
+.head.hasimg{overflow:hidden;background:#eee}
+.av.big{width:56px;height:56px;font-size:20px}
+.avrow{display:flex;align-items:center;gap:10px;margin-top:2px}
+.avrow.sm{margin-top:4px}
+.avrow .status{margin:0}
+label.pick{display:inline-flex;align-items:center;gap:7px;margin:0;padding:9px 13px;border:1px solid var(--line);border-radius:10px;cursor:pointer;font-size:13px;color:var(--text);background:#fff}
+label.pick:hover{border-color:#cfcfcf}
+label.pick .ic{flex:none}
+
+/* 팀 */
+.cardhead{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.chip.team{display:inline-flex;align-items:center;gap:4px;background:#eef2ff;color:#3730a3}
+.tbadge{width:34px;height:34px;border-radius:10px;background:#eef2ff;color:#3730a3;display:grid;place-items:center;flex:none}
+.chans .c .cname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chans .c .av{width:20px;height:20px}
+.chans #newCh{margin-top:8px;color:var(--sub);width:auto;padding:6px 10px;justify-self:flex-start}
+.csub{font-size:11px;color:var(--sub);font-weight:400;margin-left:auto;padding-left:8px}
+.chhead{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.chhead .membars{display:flex;align-items:center;gap:0;font-weight:400}
+.chhead .membars .av{width:22px;height:22px;margin-left:-7px;border:2px solid #fff}
+.chhead .membars .av:first-child{margin-left:0}
+.chhead .membars .csub{margin-left:8px}
+.chact{margin-left:auto;display:flex;gap:6px}
+.chact .ib{width:30px;height:30px}
+

@@ -11,16 +11,10 @@
 <body>
 <header class="top">
   <div class="brand"><span id="brandName">Virtual Company</span></div>
-  <nav class="tabs" id="tabs">
-    <button data-tab="office" class="on">오피스</button>
-    <button data-tab="tasks">업무</button>
-    <button data-tab="chat">메신저</button>
-    <button data-tab="org">조직</button>
-    <button data-tab="settings">설정</button>
-  </nav>
+  <nav class="tabs" id="tabs"></nav>
   <div class="goalbar">
     <input id="goal" placeholder="회사 목표를 입력하세요 (예: 국내 AI 에이전트 시장 조사 보고서 작성)">
-    <button id="runBtn" class="primary">업무 시작</button>
+    <button id="runBtn" class="run primary" title="업무 시작" aria-label="업무 시작"></button>
   </div>
 </header>
 <main id="view"></main>

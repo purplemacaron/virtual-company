@@ -1,4 +1,4 @@
-import { state, changed, addLog, postMessage, findEmp, nameOf, completeTask } from './store.js';
+import { state, changed, addLog, postMessage, findEmp, nameOf, completeTask, teamsOf } from './store.js';
 import { chat } from './llm.js';
 import { buildTools, runTool } from './tools.js';
 import { releaseDesktop } from './desktop.js';
@@ -43,9 +43,10 @@ function nextJob(e) {
 function setStatus(e, status, activity) { e.status = status; e.activity = activity; changed(); }
 
 function systemPrompt(e) {
+  const myTeams = teamsOf(e.id);
   const team = [...state.employees]
     .sort((a, b) => state.ranks.indexOf(a.rank) - state.ranks.indexOf(b.rank))
-    .map(x => `- ${x.name} | ${x.rank} | ${x.role} | ${x.model}${x.tools?.computer ? ' | PC조작 가능' : ''}${x.id === e.id ? ' (나)' : ''}`).join('\n');
+    .map(x => `- ${x.name} | ${x.rank} | ${x.role} | 팀: ${teamsOf(x.id).join(', ') || '없음'} | ${x.model}${x.tools?.computer ? ' | PC조작 가능' : ''}${x.id === e.id ? ' (나)' : ''}`).join('\n');
   return `당신은 "${state.company.name}"의 AI 직원 ${e.name}입니다.
 직급: ${e.rank} / 직무: ${e.role} / 모델: ${e.model}
 성격·지침: ${e.persona || '-'}
@@ -53,12 +54,14 @@ function systemPrompt(e) {
 회사 목표: ${state.company.goal || '(아직 설정되지 않음)'}
 회사 오너: ${state.user.name} (최고 권한자, 지시 최우선)
 직급 체계(높은 순): ${state.ranks.join(' > ')}
+${myTeams.length ? `내 소속 팀: ${myTeams.join(', ')} (각 팀에 전용 대화방이 있습니다)` : '내 소속 팀: 없음'}
 
 팀 구성:
 ${team}
 
 규칙:
 - 자기보다 직급이 낮은 직원에게만 assign_task로 업무를 지시할 수 있습니다. 상급자/동급자에게는 send_message로 보고·요청하세요.
+- 업무가 같은 팀원으로 해결되는지 먼저 살피세요. 같은 팀이 없거나 전문 영역이 다를 때만 다른 팀에게 요청하고, 요청은 해당 팀 채널에서 하세요.
 - 리더라면 목표를 구체적인 업무로 쪼개 직무와 모델 특성에 맞게 배분하세요. 직접 할 수 있는 일은 직접 하세요.
 - 업무가 끝나면 complete_task로 구체적인 결과(조사 내용, 산출물, 출처 링크)를 보고하세요.
 - 받은 메시지에 대한 답은 최종 텍스트로 쓰면 해당 대화방에 자동 전송됩니다(그때는 send_message 불필요). 답할 필요가 없으면 "[무응답]"이라고만 쓰세요.
