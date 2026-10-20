@@ -81,6 +81,9 @@ const ICONS = {
   eye: '<path d="M2.8 12S6.5 6 12 6s9.2 6 9.2 6-3.7 6-9.2 6-9.2-6-9.2-6Z"/><circle cx="12" cy="12" r="2.6"/>',
   eyeoff: '<path d="M4 4l16 16"/><path d="M9.6 6.4A9.7 9.7 0 0 1 12 6c5.5 0 9.2 6 9.2 6a15.4 15.4 0 0 1-3.4 3.9M6.4 8.7A15.9 15.9 0 0 0 2.8 12s3.7 6 9.2 6c1 0 2-.2 2.9-.5"/>',
   list: '<path d="M8.5 7h11M8.5 12h11M8.5 17h11"/><path d="M4.6 7h.01M4.6 12h.01M4.6 17h.01"/>',
+  check: '<path d="M5 12.6l4.4 4.4L19 7.4"/>',
+  doc: '<path d="M14 3.6H7.6A1.6 1.6 0 0 0 6 5.2v13.6a1.6 1.6 0 0 0 1.6 1.6h8.8a1.6 1.6 0 0 0 1.6-1.6V8.4Z"/><path d="M14 3.6v4.8h4.8"/><path d="M8.8 13h6.4M8.8 16.4h4.4"/>',
+  bell: '<path d="M7.6 10.2a4.4 4.4 0 0 1 8.8 0c0 3.9 1.6 5.4 1.6 5.4H6s1.6-1.5 1.6-5.4Z"/><path d="M10.4 18.6a1.8 1.8 0 0 0 3.2 0"/>',
 };
 const ico = (n, s = 18) => `<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n] || ''}</svg>`;
 // 글자 대신 아이콘 버튼. 한국어 이름은 title(툴팁)과 aria-label(스크린리더)로 그대로 남긴다.
@@ -120,8 +123,10 @@ function connect() {
   const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
   ws.onmessage = ev => {
     const d = JSON.parse(ev.data);
-    if (d.type === 'state') { const first = !S; S = d.state; header(); first ? build() : update(); }
+    if (d.type === 'state') { const first = !S; S = d.state; header(); first ? build() : update(); watchAppr(); tabBadge(); }
     if (d.type === 'screen') { screens[d.empId] = d; if (tab === 'office' && S) update(); }
+    // 작업 종료·결재 도착 같은 이벤트는 화면이 꺼져 있어도 보여준다
+    if (d.type === 'notice') { toast(`${d.title} · ${d.body}`); notify(d.title, d.body); }
   };
   ws.onclose = () => setTimeout(connect, 1500);
 }
@@ -137,9 +142,29 @@ function header() {
   b.setAttribute('aria-label', label);
   b.className = 'run ' + (S.company.running ? 'stop' : 'primary');
 }
+// 결재 대기 건은 탭 아이콘 위로도 보인다
+let badgeSeen = -1;
+function tabBadge() {
+  const n = S.approvals.filter(a => a.status === 'pending').length;
+  if (n === badgeSeen) return;
+  badgeSeen = n;
+  const b = $('#tabs [data-tab=office]');
+  if (b) b.innerHTML = ico('office', 19) + (n ? `<span class="badge">${n}</span>` : '');
+}
+let runBusy = false;
 $('#runBtn').onclick = async () => {
+  if (runBusy) return;                          // 연속 클릭이 시작→일시정지를 씹어버리는 것을 막는다
+  runBusy = true; $('#runBtn').disabled = true;
+  const starting = !S.company.running;
   await api('PUT', '/api/company', { goal: $('#goal').value });
-  await api('POST', S.company.running ? '/api/company/pause' : '/api/company/start');
+  await api('POST', starting ? '/api/company/start' : '/api/company/pause');
+  // 알림은 사용자의 클릭 이후에만 요청할 수 있다 — 업무 시작을 누른 김에 승인을 받는다
+  if (starting && 'Notification' in window && Notification.permission === 'default') Notification.requestPermission();
+  const st = await api('GET', '/api/state');     // 서버 상태를 다시 읽어 버튼이 실제 상태와 어긋나지 않게 한다
+  if (!st.error) { S = st; header(); update(); tabBadge(); }
+  $('#runBtn').disabled = false; runBusy = false;
+  toast(starting ? '업무 시작 · 대기 중인 업무부터 다시 달립니다'
+    : '일시정지 · 진행 중이던 업무는 "멈춤" 칸으로 이동했습니다\n다시 하려면 업무 카드의 ▶을 누르세요 (보낸 메시지는 재개 후에 처리됩니다)');
 };
 $('#tabs').onclick = e => {
   const t = e.target.closest('[data-tab]')?.dataset.tab; if (!t) return;
@@ -151,7 +176,10 @@ $('#tabs').innerHTML = [['office', '오피스'], ['tasks', '업무'], ['chat', '
 
 // ---------- 화면 ----------
 const shells = {
-  office: () => `<div class="office"><div class="floor" id="desks"></div><aside class="card feed"><h3>실시간 활동</h3><div id="feed"></div></aside></div>`,
+  office: () => `<div class="office"><div class="floor" id="desks"></div><aside class="offside">
+    <div id="banner"></div>
+    <div class="card apprbox" id="apprBox"></div>
+    <div class="card feed"><h3>실시간 활동</h3><div id="feed"></div></aside></aside></div>`,
   tasks: () => `<form class="taskform" id="tf"><input name="title" placeholder="업무 제목" required><input name="description" placeholder="상세 내용 / 기대 산출물"><select name="assigneeId" id="asg"></select><button class="ib primary" type="submit" title="업무 지시" aria-label="업무 지시">${ico('plus')}</button></form><div class="board" id="board"></div>`,
   chat: () => `<div class="chat"><aside class="chans" id="chans"></aside><section class="room"><div class="chhead" id="chhead"></div><div class="msgs" id="msgs"></div><form class="send" id="send"><input id="msgIn" placeholder="메시지 입력 · @이름 으로 직원 호출" autocomplete="off"><button class="ib primary" type="submit" title="전송" aria-label="전송">${ico('send')}</button></form></section></div>`,
   org: () => `<div class="grid2"><div class="colstack">
@@ -212,6 +240,49 @@ const shells = {
   },
 };
 
+// ---------- 작업 종료 배너 · 결재함 ----------
+// 일이 모두 끝났을 때 아래 창에 "작업 종료"와 보고서 파일을 남긴다. 숨기면 그 종료 건은 다시 안 보인다.
+function renderBanner() {
+  const el = $('#banner'); if (!el) return;
+  const r = S.lastRun;
+  if (!r || localStorage.getItem('vc.ban.' + r.at) === '1') { el.className = ''; el.innerHTML = ''; return; }
+  el.className = 'banner';
+  el.innerHTML = `<div class="bt">${ico('check', 20)}<b>작업 종료</b><span>${time(r.at)} · 완료 ${r.done}건${r.stuck ? ` · 멈춤/실패 ${r.stuck}건` : ''}</span></div>
+    <div class="bs">${esc(r.goal || '목표 미설정')}</div>
+    <div class="brow"><a class="dl" href="/api/report/${esc(r.file)}" download title="작업 종료 보고서 다운로드">${ico('doc', 15)}보고서 저장</a>
+    ${ib('이 종료 안내 숨기기', 'close', 'x', 'id="banHide"')}</div>`;
+}
+function renderAppr() {
+  const el = $('#apprBox'); if (!el) return;
+  const pend = S.approvals.filter(a => a.status === 'pending');
+  const past = S.approvals.filter(a => a.status !== 'pending').slice(-4).reverse();
+  const st = { approved: '승인', rejected: '반려', expired: '만료' };
+  el.innerHTML = `<h3>결재함${pend.length ? `<span class="badge">${pend.length}</span>` : ''}</h3>
+    ${pend.map(a => `<div class="appr" data-apprs="${a.id}" tabindex="0" role="button" title="결재 서류 열기">
+      <div class="ti">${esc(a.title)}</div>
+      <div class="who">${av(a.empId, 'width:22px;height:22px')}<span>${esc(nm(a.empId))} · ${a.taskId ? '#' + esc(a.taskId) : '업무 없음'} · ${time(a.createdAt)}</span></div>
+      <div class="det">${esc(a.detail)}</div>
+      <div class="btns">${ib('반려', 'close', 'x danger', `data-no="${a.id}"`)}${ib('결재 서류에 서명', 'pencil', '', `data-apprs="${a.id}"`)}${ib('승인', 'check', 'primary', `data-yes="${a.id}"`)}</div></div>`).join('')
+      || '<div class="status">올라온 결재가 없습니다. 직원이 되돌릴 수 없는 행동을 하려 하면 여기에 서류가 뜹니다.</div>'}
+    ${past.length ? `<div class="hist">${past.map(a => `<span class="chip ${a.status}">${st[a.status] || a.status} · ${esc(a.title)}</span>`).join('')}</div>` : ''}`;
+}
+function notify(title, body) {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  try { new Notification(title, { body }); } catch { /* 브라우저가 알림을 막으면 화면 토스트만 남는다 */ }
+}
+// 결재가 올라온 순간을 다른 탭에서도 놓치지 않는다
+let pendSeen = 0, apprInit = false;
+function watchAppr() {
+  const pend = S.approvals.filter(a => a.status === 'pending');
+  if (!apprInit) { apprInit = true; pendSeen = pend.length; return; }
+  if (pend.length > pendSeen) {
+    const a = pend[pend.length - 1];
+    toast(`결재 서류 도착 · ${a.title}\n${a.detail.slice(0, 120)}`);
+    notify('결재 서류가 도착했습니다', `${nm(a.empId)}님: ${a.title}`);
+  }
+  pendSeen = pend.length;
+}
+
 const updaters = {
   office() {
     $('#desks').innerHTML = S.employees.map(e => {
@@ -224,6 +295,7 @@ const updaters = {
         ${toolChips(e)}</div></div>`;
     }).join('');
     $('#feed').innerHTML = S.logs.slice(-100).reverse().map(l => `<div class="log ${l.kind}"><span class="t">${time(l.ts)}</span><span class="who" style="color:${col(l.empId)}">${esc(nm(l.empId))}</span>${esc(l.text)}</div>`).join('') || '<div class="status">아직 활동이 없습니다</div>';
+    renderBanner(); renderAppr();
   },
   tasks() {
     const a = $('#asg'), v = a.value;
@@ -239,11 +311,27 @@ const updaters = {
     a.innerHTML = (groups ? groups + (rest.length ? `<optgroup label="미소속">${rest.map(opt).join('')}</optgroup>` : '')
       : S.employees.map(opt).join('')) || '<option value="">직원 없음</option>';
     if (v) a.value = v;
-    const cols = { todo: '할 일', doing: '진행 중', done: '완료' };
-    $('#board').innerHTML = Object.entries(cols).map(([k, t]) => `<div class="col"><h3>${t} · ${S.tasks.filter(x => x.status === k).length}</h3>
-      ${S.tasks.filter(x => x.status === k).reverse().map(x => `<div class="task">${ib('업무 삭제', 'trash', 'x del', `data-del="${x.id}"`)}<div class="ti">#${x.id} ${esc(x.title)}</div>
+    // 멈춤/실패는 별도 칸에 둔다 — 업무 시작을 다시 켜도 이 카드들은 버튼 전까지 다시 달리지 않는다.
+    const card = x => `<div class="task">${ib('업무 삭제', 'trash', 'x del', `data-del="${x.id}"`)}
+      ${x.status !== 'done' ? ib('오너가 완료 처리', 'check', 'x ok', `data-done="${x.id}"`) : ''}
+      ${['todo', 'doing'].includes(x.status) ? ib('이 업무만 멈춤', 'pause', 'x stop', `data-pause="${x.id}"`) : ''}
+      ${['paused', 'failed', 'blocked'].includes(x.status) ? ib('다시 할 일로 옮겨 시작', 'play', 'x go', `data-resume="${x.id}"`) : ''}
+      <div class="ti">#${x.id} ${esc(x.title)}</div>
       <div class="sm">${esc(nm(x.assignerId))} → ${esc(nm(x.assigneeId))}</div>${x.description ? `<div class="sm">${esc(x.description)}</div>` : ''}
-      ${x.error ? `<div class="sm" style="color:#d33">${esc(x.error)}</div>` : ''}${x.result ? `<details><summary>결과 보기</summary>${esc(x.result)}</details>` : ''}</div>`).join('')}</div>`).join('');
+      ${x.error ? `<div class="sm err">${esc(x.error)}</div>` : ''}
+      ${x.status === 'blocked' ? '<div class="sm">결재 대기 중 · 오피스의 결재함에서 서명하면 이어갑니다</div>' : ''}
+      ${x.result ? `<details><summary>결과 보기</summary>${esc(x.result)}</details>` : ''}</div>`;
+    const cols = [
+      ['할 일', x => x.status === 'todo'],
+      ['진행 중', x => x.status === 'doing'],
+      ['결재 대기', x => x.status === 'blocked'],
+      ['멈춤 · 실패', x => ['paused', 'failed'].includes(x.status)],
+      ['완료', x => x.status === 'done'],
+    ];
+    $('#board').innerHTML = cols.map(([t, f]) => {
+      const list = S.tasks.filter(f).reverse();
+      return `<div class="col"><h3>${t} · ${list.length}</h3>${list.map(card).join('') || '<div class="status">없음</div>'}</div>`;
+    }).join('');
   },
   chat() {
     const observed = [...new Set(S.messages.map(m => m.channel).filter(c => c.startsWith('dm:') && !c.split(':').includes('user')))];
@@ -311,11 +399,17 @@ function update() { updaters[tab]?.(); }
 // ---------- 이벤트 ----------
 document.addEventListener('click', async e => {
   if (!$('#modal').classList.contains('hidden')) return;
-  const t = e.target.closest('[data-id],[data-ch],[data-del],[data-edit],[data-chedit],[data-chdel],[data-team],[data-teamdel],[data-clearkey],[data-mcpdel],[data-mcpgrant],#newCh,#addEmp,#addTeam,#saveRanks,#saveSet,#saveCfg,#saveSearch,#searchTest,#mcpAdd,#clearLogs,#saveMcp,#recon');
+  const t = e.target.closest('[data-id],[data-ch],[data-del],[data-done],[data-pause],[data-resume],[data-yes],[data-no],[data-apprs],[data-edit],[data-chedit],[data-chdel],[data-team],[data-teamdel],[data-clearkey],[data-mcpdel],[data-mcpgrant],#newCh,#addEmp,#addTeam,#saveRanks,#saveSet,#saveCfg,#saveSearch,#searchTest,#mcpAdd,#clearLogs,#saveMcp,#recon,#banHide');
   if (!t) return;
   if (t.dataset.id && tab === 'office') { chan = dm('user', t.dataset.id); $('#tabs [data-tab=chat]').click(); }
   else if (t.dataset.ch) { chan = t.dataset.ch; update(); }
-  else if (t.dataset.del) { if (confirm('업무를 삭제할까요?')) api('DELETE', '/api/tasks/' + t.dataset.del); }
+  else if (t.dataset.del) { if (confirm('업무를 삭제할까요? 삭제한 일은 다시 지시되지 않습니다.')) api('DELETE', '/api/tasks/' + t.dataset.del); }
+  else if (t.dataset.done) { await api('PUT', '/api/tasks/' + t.dataset.done, { status: 'done' }); toast('완료 처리했습니다 · 남은 업무가 없으면 작업 종료 보고서가 올라옵니다'); }
+  else if (t.dataset.pause) { await api('PUT', '/api/tasks/' + t.dataset.pause, { status: 'paused' }); toast('이 업무를 멈췄습니다 · 멈춤·실패 칸에서 ▶로 다시 시작할 수 있어요'); }
+  else if (t.dataset.resume) await api('PUT', '/api/tasks/' + t.dataset.resume, { status: 'todo' });
+  else if (t.dataset.yes || t.dataset.no) sign(t.dataset.yes || t.dataset.no, t.dataset.yes ? true : false, '');
+  else if (t.dataset.apprs) showApproval(t.dataset.apprs);
+  else if (t.id === 'banHide') { if (S.lastRun) localStorage.setItem('vc.ban.' + S.lastRun.at, '1'); renderBanner(); }
   else if (t.dataset.edit) editEmp(emp(t.dataset.edit));
   else if (t.dataset.team || t.dataset.chedit) editTeam(S.channels.find(x => x.id === (t.dataset.team || t.dataset.chedit)));
   else if (t.dataset.teamdel) {
@@ -618,5 +712,40 @@ function editTeam(c) {
     if (chan === c.id) chan = 'general';
     await api('DELETE', '/api/channels/' + c.id);
     close();
+  };
+}
+
+// ---------- 결재 서류 ----------
+async function sign(id, approved, note) {
+  const a = S.approvals.find(x => x.id === id);
+  const r = await api('POST', '/api/approvals/' + id, { approved, note });
+  if (r.error) return;
+  toast(`${a ? a.title : '결재'} ${approved ? '승인' : '반려'}됨 · 담당 직원이 결재 결과를 받아 이어갑니다`);
+  $('#modal').classList.add('hidden');
+}
+function showApproval(id) {
+  const a = S.approvals.find(x => x.id === id);
+  if (!a) { toast('이미 처리된 결재입니다', 'err'); return; }
+  const t = S.tasks.find(x => x.id === a.taskId);
+  $('#sheet').innerHTML = `<h3>결재 서류 · 대기</h3>
+    <div class="doc">
+      <div class="dline"><span>상신자</span><b>${esc(nm(a.empId))} (${esc(emp(a.empId)?.rank || '')})</b></div>
+      <div class="dline"><span>상신 시각</span><b>${new Date(a.createdAt).toLocaleString('ko-KR', { hour12: false })}</b></div>
+      <div class="dline"><span>관련 업무</span><b>${t ? `#${esc(t.id)} ${esc(t.title)}` : '없음'}</b></div>
+      <label>결재 제목</label><div class="dti">${esc(a.title)}</div>
+      <label>내용</label><div class="dbody">${esc(a.detail)}</div>
+      <label>오너 메모 · 조건</label><textarea id="a_note" rows="3" placeholder="예: 금액 다시 확인 후 집행 / 이번 주에는 보류"></textarea>
+      <div class="status">승인하면 담당 직원이 그대로 진행하고, 반려하면 그 행동은 하지 않고 대안으로 보고합니다.</div>
+    </div>
+    <div class="btns"><button type="button" class="danger lbl" id="a_no" title="반려">${ico('close', 15)}반려</button>
+      <button type="button" class="primary lbl" id="a_yes" title="승인">${ico('check', 15)}승인</button>
+      ${ib('닫기', 'close', '', 'id="a_close"')}</div>`;
+  $('#modal').classList.remove('hidden');
+  const note = () => $('#a_note').value.trim();
+  $('#a_yes').onclick = () => sign(a.id, true, note());
+  $('#a_no').onclick = () => sign(a.id, false, note());
+  $('#a_close').onclick = () => $('#modal').classList.add('hidden');
+  $('#sheet').onkeydown = ev => {
+    if (ev.key === 'Enter' && ev.target.tagName === 'INPUT') { ev.preventDefault(); $('#a_yes').click(); }
   };
 }

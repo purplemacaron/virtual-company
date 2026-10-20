@@ -1,8 +1,10 @@
 import express from 'express';
 import http from 'http';
+import fs from 'fs';
+import path from 'path';
 import { WebSocketServer } from 'ws';
-import { state, changed, publicState, onEvent, screens, uid, postMessage, leader, flush } from './store.js';
-import { startEngine, abortAll } from './engine.js';
+import { state, changed, publicState, onEvent, screens, uid, postMessage, leader, flush, cancelTask, decideApproval, safeReportName, reportDir } from './store.js';
+import { startEngine, abortAll, stopTask } from './engine.js';
 import { listModels } from './llm.js';
 import { connectMcp, closeAll, resetBrowser, testSearch, mcpServersObj, writeMcpServers } from './tools.js';
 
@@ -171,6 +173,13 @@ app.put('/api/company', (req, res) => {
 });
 app.post('/api/company/start', (req, res) => {
   state.company.running = true;
+  state.company.startedAt = Date.now();          // 이번 가동 구분자 — 종료 보고서를 한 번만 쓴다
+  // 결재 때문에 멈춰 있던 업무는 가동과 함께 다시 결재 대기 상태로 올린다.
+  state.tasks.forEach(t => {
+    if (t.status === 'paused' && t.error === '결재 대기 중 일시정지' && state.approvals.some(a => a.id === t.blockedBy && a.status === 'pending')) {
+      t.status = 'blocked'; delete t.error;
+    }
+  });
   const L = leader();
   const open = state.tasks.some(t => t.status !== 'done');
   if (L && state.company.goal && !open && !L.inbox.length) {
@@ -182,6 +191,13 @@ app.post('/api/company/start', (req, res) => {
 app.post('/api/company/pause', (req, res) => {
   state.company.running = false;
   abortAll();                                   // 진행 중인 작업(컴퓨터 조작 포함) 즉시 중단
+  // 진행 중이던 업무는 할 일로 되돌리지 않고 멈춤으로 세운다. 다시 켜도 같은 작업이 저절로 재실행되지 않는다.
+  // 결재 대기 중인 업무도 멈춤으로 세운다. 승인하면 할 일로 돌아와 다음 가동부터 이어진다.
+  state.tasks.forEach(t => {
+    if (t.status === 'doing') { t.status = 'paused'; t.error = '일시정지됨'; }
+    else if (t.status === 'blocked') { t.status = 'paused'; t.error = '결재 대기 중 일시정지'; }
+  });
+  // 오너가 보낸 메시지(지시·취소·결재 결과)는 대기열에 남겨 다음 가동 때 읽고, 직원 간 잡담은 버린다.
   state.employees.forEach(e => { e.inbox = e.inbox.filter(m => m.from === 'user'); });
   changed(); ok(res);
 });
@@ -221,10 +237,40 @@ app.post('/api/tasks', (req, res) => {
 });
 app.put('/api/tasks/:id', (req, res) => {
   const t = state.tasks.find(x => x.id === req.params.id);
-  if (t && req.body.status) t.status = req.body.status;
+  // 오너가 화면에서 바꿀 수 있는 상태만 받는다. doing/blocked은 엔진이 관리한다.
+  const next = ['todo', 'paused', 'done'].includes(req.body.status) ? req.body.status : null;
+  if (t && next) {
+    if (t.status === 'doing' && next !== 'doing') stopTask(t.id);   // 재개/멈춤 시 밀리는 실행을 끊는다
+    t.status = next;
+    if (next === 'todo') { delete t.error; delete t.note; delete t.blockedBy; }
+    if (next === 'paused') t.error = '오너가 멈춤';
+    if (next === 'done') { t.doneAt = Date.now(); t.result = t.result || '오너가 직접 완료 처리했습니다'; }
+  }
   changed(); ok(res);
 });
-app.delete('/api/tasks/:id', (req, res) => { state.tasks = state.tasks.filter(x => x.id !== req.params.id); changed(); ok(res); });
+app.delete('/api/tasks/:id', (req, res) => {
+  const t = state.tasks.find(x => x.id === req.params.id);
+  if (t) { stopTask(t.id); cancelTask(t); }      // 진행 중이면 그 자리에서 끊고, 취소 사실을 직원에게 알린다
+  ok(res);
+});
+
+// ---------- 결재 ----------
+app.post('/api/approvals/:id', (req, res) => {
+  const a = decideApproval(req.params.id, !!req.body?.approved, String(req.body?.note || ''));
+  if (!a) return res.status(409).json({ error: '이미 처리됐거나 없는 결재 서류입니다' });
+  res.json({ status: a.status });
+});
+
+// ---------- 작업 종료 보고서 ----------
+app.get('/api/report/:name', (req, res) => {
+  const name = safeReportName(req.params.name);
+  if (!name) return res.status(400).json({ error: '보고서 이름 형식이 올바르지 않습니다' });
+  const f = path.join(reportDir(), name);
+  if (!fs.existsSync(f)) return res.status(404).json({ error: '보고서 파일이 없습니다. 서버가 재시작되면 사라질 수 있습니다' });
+  res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${name}"; filename*=UTF-8''${encodeURIComponent(`작업보고-${name.slice(7, 15)}.md`)}`);
+  fs.createReadStream(f).pipe(res);
+});
 
 app.post('/api/messages', (req, res) => {
   const { channel, text } = req.body;

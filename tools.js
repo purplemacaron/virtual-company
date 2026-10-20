@@ -2,7 +2,7 @@ import { chromium } from 'playwright';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { state, changed, postMessage, findEmpByName, uid, dmChannel, screens, emit, rankIdx, completeTask, nameOf, addLog } from './store.js';
+import { state, changed, postMessage, findEmpByName, uid, dmChannel, screens, emit, rankIdx, completeTask, nameOf, addLog, isCancelled, requestApproval } from './store.js';
 import { desktopAct } from './desktop.js';
 import { SEARCH_ENGINES, SEARCH_ORDER } from './catalog.js';
 
@@ -19,6 +19,8 @@ const CORE = [
     parameters: obj({ assignee: str('직원 이름'), title: str('업무 제목'), description: str('구체적인 업무 내용, 기대 산출물') }, ['assignee', 'title']) },
   { name: 'complete_task', description: '내 업무를 완료하고 결과 보고',
     parameters: obj({ task_id: str('업무 ID'), result: str('구체적인 결과물/보고 내용') }, ['task_id', 'result']) },
+  { name: 'request_approval', description: '되돌릴 수 없는 행동을 오너 결재(승인)에 부친다. 실행 전에 호출하고, 승인/반려 응답을 받은 뒤에 행동한다. 예: 결제·송금·파일 삭제·계정 설정 변경·메일 발송·게시글 발행',
+    parameters: obj({ title: str('결재 제목 한 줄'), detail: str('무엇을 왜 하려는지, 위험 요소와 대안'), task_id: str('관련 업무 ID') }, ['title', 'detail']) },
   { name: 'list_tasks', description: '회사 전체 업무 목록 조회', parameters: obj() },
 ];
 const ENGINE_IDS = Object.keys(SEARCH_ENGINES);
@@ -315,7 +317,7 @@ async function fetchUrl(url) {
 export const testSearch = (query, engine) => webSearch(query, engine, 6);
 
 // ---------- 실행 ----------
-export async function runTool(name, a, { emp }) {
+export async function runTool(name, a, { emp, ctx }) {
   if (name.startsWith('computer_')) return desktopAct(emp, name, a);
   if (name.startsWith('mcp__')) return callMcp(name, a);
 
@@ -335,6 +337,8 @@ export async function runTool(name, a, { emp }) {
     case 'assign_task': {
       const t = findEmpByName(a.assignee);
       if (!t) return `"${a.assignee}" 직원이 없습니다`;
+      // 오너가 지운 일은 다시 만들지 못하게 막는다 — 안 그러면 같은 작업이 무한히 재지시된다
+      if (isCancelled(a.title)) return `거부됨: "${a.title}"은(는) 오너가 삭제한 업무입니다. 같은 내용으로 다시 지시하지 마세요.`;
       if (t.id !== emp.id && rankIdx(t) <= rankIdx(emp)) return `${t.name}(${t.rank})님은 직급이 같거나 높아 업무를 지시할 수 없습니다. send_message로 요청하세요.`;
       const task = { id: uid().slice(0, 5), title: a.title, description: a.description || '', assigneeId: t.id, assignerId: emp.id, status: 'todo', createdAt: Date.now() };
       state.tasks.push(task); changed();
@@ -342,14 +346,23 @@ export async function runTool(name, a, { emp }) {
       return `업무 #${task.id} 생성 → ${t.name}`;
     }
     case 'complete_task': {
-      const t = state.tasks.find(x => x.id === String(a.task_id).replace('#', ''));
-      if (!t) return '해당 업무가 없습니다';
+      const id = String(a.task_id).replace('#', '');
+      const t = state.tasks.find(x => x.id === id);
+      if (!t) return state.cancelled.some(c => c.id === id)
+        ? '이 업무는 오너가 취소했습니다. 다시 수행하지 마세요.'
+        : '해당 업무가 없습니다';
       if (t.assigneeId !== emp.id) return '본인 업무만 완료할 수 있습니다';
       completeTask(t, emp, a.result);
       return '완료 처리되었습니다';
     }
+    case 'request_approval': {
+      const ap = requestApproval(emp, { title: a.title, detail: a.detail, taskId: String(a.task_id || '').replace('#', '') || null });
+      if (ctx) { ctx.hold = true; ctx.approvalId = ap.id; }
+      return `결재 #${ap.id} 상신 완료 · "${ap.title}"\n오너의 승인/반려를 기다립니다. 이번 응답을 여기서 마무리하고, 승인 전에는 해당 행동을 실행하지 마세요.`;
+    }
     case 'list_tasks':
-      return state.tasks.slice(-40).map(t => `#${t.id} [${t.status}] ${t.title} — 담당 ${nameOf(t.assigneeId)}, 지시 ${nameOf(t.assignerId)}`).join('\n') || '업무 없음';
+      return (state.tasks.slice(-40).map(t => `#${t.id} [${t.status}] ${t.title} — 담당 ${nameOf(t.assigneeId)}, 지시 ${nameOf(t.assignerId)}`).join('\n') || '업무 없음')
+        + (state.cancelled.length ? `\n\n[오너가 취소한 업무 — 재지시·재수행 금지]\n${state.cancelled.slice(-10).map(c => `- ${c.title}`).join('\n')}` : '');
     case 'web_search': return webSearch(a.query, a.engine, a.max_results);
     case 'search_status': return searchStatus();
     case 'fetch_url': return fetchUrl(a.url);

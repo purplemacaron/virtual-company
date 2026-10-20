@@ -62,7 +62,7 @@ main{padding:24px 28px;max-width:1500px;margin:0 auto}
 
 /* 업무 */
 .taskform{display:grid;grid-template-columns:1fr 2fr 180px auto;gap:8px;margin-bottom:20px}
-.board{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.board{display:grid;grid-template-columns:repeat(auto-fit,minmax(196px,1fr));gap:16px}
 .col{background:#f4f4f4;border-radius:var(--r);padding:14px;min-height:300px}
 .task{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px}
 .task .ti{font-weight:600;margin-bottom:4px}
@@ -112,6 +112,43 @@ pre.out{white-space:pre-wrap;word-break:break-word;max-height:240px;overflow:aut
 .toast.on{opacity:1;transform:translateX(-50%)}
 .toast.err{background:#b42318}
 @media (prefers-reduced-motion:reduce){.toast{transition:none}}
+
+/* 결재함 · 작업 종료 · 멈춤 칸 */
+.offside{display:flex;flex-direction:column;gap:16px;position:sticky;top:90px;max-height:calc(100vh - 110px);min-width:0}
+.offside .feed{position:static;max-height:none;flex:1;min-height:0}
+.apprbox{flex:none;max-height:52vh;overflow:auto}
+.appr{border:1px solid #fde68a;border-left:3px solid #b45309;border-radius:10px;padding:12px;margin-bottom:10px;background:#fffbeb;cursor:pointer}
+.appr:hover{border-color:#f59e0b}
+.appr:focus-visible{outline:2px solid #111;outline-offset:2px}
+.appr .ti{font-weight:600;font-size:13px;margin-bottom:5px}
+.appr .who{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--sub);margin-bottom:6px}
+.appr .det{font-size:12px;color:#3f3f46;white-space:pre-wrap;line-height:1.55;max-height:78px;overflow:auto}
+.appr .btns{margin-top:10px}
+.appr .ib{width:32px;height:32px}
+.hist{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
+.chip.approved{background:#ecfdf5;color:#047857}
+.chip.rejected{background:#fef2f2;color:#b91c1c}
+.chip.expired{background:#f3f4f6;color:#6b7280}
+.badge{display:inline-grid;place-items:center;min-width:17px;height:17px;padding:0 4px;border-radius:9px;background:#d33;color:#fff;font-size:11px;font-weight:700;margin-left:6px;vertical-align:2px}
+.tabs button{position:relative}
+.tabs .badge{position:absolute;top:1px;right:1px;margin:0;min-width:15px;height:15px;font-size:10px}
+.banner{background:#0f172a;color:#fff;border-radius:var(--r);padding:14px 16px;box-shadow:0 10px 26px rgba(15,23,42,.18)}
+.banner .bt{display:flex;align-items:center;gap:8px;font-size:14px}
+.banner .bt span{margin-left:auto;font-size:11px;opacity:.75;font-weight:400}
+.banner .bs{font-size:12px;opacity:.8;margin-top:6px;word-break:break-word}
+.banner .brow{display:flex;align-items:center;gap:8px;margin-top:12px}
+.banner .dl{display:inline-flex;align-items:center;gap:6px;background:#fff;color:#0f172a;border-radius:10px;padding:8px 12px;font-size:13px;font-weight:600;text-decoration:none}
+.banner .ib{background:transparent;border-color:#334155;color:#cbd5e1}
+.banner .ib:hover{border-color:#fff;color:#fff}
+.doc{border:1px solid var(--line);border-radius:12px;padding:14px 16px;background:#fcfcfd}
+.doc .dline{display:flex;gap:10px;font-size:12px;padding:6px 0;border-bottom:1px dashed var(--line)}
+.doc .dline span{color:var(--sub);min-width:74px}
+.doc .dti{font-size:16px;font-weight:700;margin:2px 0 6px}
+.doc .dbody{font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-word;background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px;max-height:220px;overflow:auto}
+.task .ib.go,.task .ib.ok{color:#16a34a}
+.task .ib.stop{color:#d97706}
+.task .sm.err{color:#d33}
+@media (prefers-reduced-motion:reduce){.banner{box-shadow:none}}
 
 /* 아이콘 버튼 — 글자 칸이 좁아지므로 도형 크기를 고정하고 라벨은 툴팁에 둔다 */
 .ib{display:inline-grid;place-items:center;width:36px;height:36px;padding:0;flex:none}
