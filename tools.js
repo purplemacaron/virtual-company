@@ -42,12 +42,18 @@ const BROWSER = [
     parameters: obj({ action: str('list|new|select|close'), index: num('탭 번호(select/close)'), url: str('new일 때 열 URL') }, ['action']) },
 ];
 const COMPUTER = [
-  { name: 'computer_screenshot', description: '[컴퓨터 유즈] 실제 PC 화면 전체 스크린샷. 이후 좌표는 이 이미지 기준', parameters: obj() },
-  { name: 'computer_click', description: '[컴퓨터 유즈] 실제 마우스로 화면 좌표 클릭', parameters: obj({ x: num('x'), y: num('y'), button: str('left 또는 right'), double: bool('더블클릭') }, ['x', 'y']) },
+  { name: 'computer_info', description: '[컴퓨터 유즈] 화면 크기·커서 위치·열린 창 목록(번호·제목·좌표·크기)을 텍스트로 반환. 이미지를 볼 수 없는 모델도 이 도구로 조작 대상을 찾는다. 마우스를 움직이지 않으므로 다른 직원 작업 중에도 안전', parameters: obj() },
+  { name: 'computer_screenshot', description: '[컴퓨터 유즈] 실제 PC 화면 전체 스크린샷. 이후 computer_click 등의 좌표는 이 이미지(1280 폭) 기준', parameters: obj() },
+  { name: 'computer_open', description: '[컴퓨터 유즈] URL·프로그램·파일을 OS로 열어서 화면에 띄움. 예: "https://duckduckgo.com", "notepad", "calc"', parameters: obj({ target: str('URL 또는 실행 파일명/경로') }, ['target']) },
+  { name: 'computer_focus', description: '[컴퓨터 유즈] computer_info의 창 번호로 해당 창을 앞으로 가져옴', parameters: obj({ index: num('computer_info 목록의 창 번호') }, ['index']) },
+  { name: 'computer_click', description: '[컴퓨터 유즈] 실제 마우스로 스크린샷 좌표 클릭', parameters: obj({ x: num('x (스크린샷 기준)'), y: num('y'), button: str('left | right | middle'), double: bool('더블클릭') }, ['x', 'y']) },
+  { name: 'computer_click_window', description: '[컴퓨터 유즈] 창 번호+지점으로 클릭 (스크린샷이 없어도 동작). spot: center|title|menu|left|right|top|bottom|close|min|max, dx/dy로 픽셀 보정(우측 상단 버튼군은 근사치)',
+    parameters: obj({ index: num('창 번호'), spot: str('지점, 기본 center'), dx: num('x 보정 px'), dy: num('y 보정 px'), button: str('left | right | middle'), double: bool('더블클릭') }, ['index']) },
+  { name: 'computer_move', description: '[컴퓨터 유즈] 클릭하지 않고 커서만 이동 (툴팁·호버 확인)', parameters: obj({ x: num('x'), y: num('y') }, ['x', 'y']) },
   { name: 'computer_drag', description: '[컴퓨터 유즈] 드래그', parameters: obj({ x1: num('시작 x'), y1: num('시작 y'), x2: num('끝 x'), y2: num('끝 y') }, ['x1', 'y1', 'x2', 'y2']) },
-  { name: 'computer_type', description: '[컴퓨터 유즈] 실제 키보드로 텍스트 입력 (한글 가능)', parameters: obj({ text: str('텍스트'), press_enter: bool('입력 후 Enter') }, ['text']) },
-  { name: 'computer_key', description: '[컴퓨터 유즈] 키/단축키. 예: Enter, Tab, Ctrl+C, Cmd+Space, Alt+F4, Win+R', parameters: obj({ key: str('키') }, ['key']) },
-  { name: 'computer_scroll', description: '[컴퓨터 유즈] 스크롤 (dy 양수=아래). x,y를 주면 그 위치에서', parameters: obj({ dy: num('픽셀'), x: num('x'), y: num('y') }, ['dy']) },
+  { name: 'computer_type', description: '[컴퓨터 유즈] 실제 키보드로 텍스트 입력 (한글 가능, 클립보드 사용 후 복원). 먼저 클릭 등으로 입력창에 포커스해야 한다', parameters: obj({ text: str('텍스트'), press_enter: bool('입력 후 Enter') }, ['text']) },
+  { name: 'computer_key', description: '[컴퓨터 유즈] 키/단축키. 예: Enter, Tab, Ctrl+C, Alt+F4, Win+R, Alt+Tab', parameters: obj({ key: str('키') }, ['key']) },
+  { name: 'computer_scroll', description: '[컴퓨터 유즈] 스크롤 (dy 양수=아래). x,y를 주면 그 위치에서', parameters: obj({ dy: num('픽셀'), x: num('x'), y: num('y') }) },
   { name: 'computer_wait', description: '[컴퓨터 유즈] 로딩 대기 후 스크린샷', parameters: obj({ seconds: num('초, 최대 10') }) },
 ];
 

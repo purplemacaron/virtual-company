@@ -63,7 +63,7 @@ ${team}
 - 업무가 끝나면 complete_task로 구체적인 결과(조사 내용, 산출물, 출처 링크)를 보고하세요.
 - 받은 메시지에 대한 답은 최종 텍스트로 쓰면 해당 대화방에 자동 전송됩니다(그때는 send_message 불필요). 답할 필요가 없으면 "[무응답]"이라고만 쓰세요.
 - 단순 인사나 "확인했습니다" 같은 의미 없는 메시지는 보내지 마세요.
-${e.tools?.computer && state.settings.app.computerEnabled ? `- 컴퓨터 유즈(computer_*)는 실제 PC를 조작합니다. 먼저 computer_screenshot으로 화면을 확인하고, 한 번에 한 동작씩 하며 결과 스크린샷을 확인하세요. 파일 삭제, 결제, 송금, 계정 설정 변경, 메일 발송 등 되돌릴 수 없는 행동은 오너의 명시적 허락 없이 하지 마세요.` : `- 컴퓨터 유즈는 현재 사용 불가합니다(오너가 PC 조작을 꺼두었거나 권한이 없음). 웹 작업은 web_search/Playwright로 처리하세요.`}
+${e.tools?.computer && state.settings.app.computerEnabled ? `- 컴퓨터 유즈(computer_*)는 실제 PC를 조작합니다. 첫 단계로 computer_info를 호출해 화면 크기·커서·열린 창 목록(번호·좌표·크기)을 확인하세요. 스크린샷을 볼 수 있으면 computer_screenshot 좌표로 computer_click을, 볼 수 없으면 computer_focus(창 번호)·computer_click_window(창 번호+지점)·computer_key 단축키로 조작하세요. 한 번에 한 동작씩 하고 반드시 결과를 확인합니다. 파일 삭제, 결제, 송금, 계정 설정 변경, 메일 발송 등 되돌릴 수 없는 행동은 오너의 명시적 허락 없이 하지 마세요.` : `- 컴퓨터 유즈는 현재 사용 불가합니다(오너가 PC 조작을 꺼두었거나 권한이 없음). 웹 작업은 web_search/Playwright로 처리하세요.`}
 - 브라우저 도구를 쓰기 전 화면이 about:blank면 먼저 browser_navigate로 페이지를 여세요. 새 탭으로 열리는 링크는 자동으로 그 탭을 따라갑니다.
 - 웹 정보는 가능하면 web_search/Playwright를 쓰고, 데스크톱 앱이 필요할 때 컴퓨터 유즈를 쓰세요.
 - 한국어로 간결하고 전문적으로 답하세요.
@@ -84,7 +84,12 @@ function describe({ name, args = {} }) {
     browser_screenshot: '브라우저 화면 갱신',
     browser_back: '브라우저 뒤로 가기',
     browser_tabs: `브라우저 탭 · ${args.action || 'list'}`,
+    computer_info: 'PC 화면·열린 창 목록 확인 중',
     computer_screenshot: 'PC 화면 확인 중',
+    computer_open: `PC에서 열기 · ${args.target}`,
+    computer_focus: `창 앞으로 가져오기 · [${args.index}]`,
+    computer_click_window: `창 클릭 · [${args.index}] ${args.spot || 'center'}`,
+    computer_move: `커서 이동 · (${args.x}, ${args.y})`,
     computer_click: `마우스 클릭 · (${args.x}, ${args.y})`,
     computer_drag: '마우스 드래그',
     computer_type: `타이핑 · "${String(args.text || '').slice(0, 30)}"`,
