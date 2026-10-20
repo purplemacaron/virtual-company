@@ -20,7 +20,7 @@ function clean(schema, drop) {
   return schema;
 }
 
-// SDK 원문 오류(404 status code 등)는 사람이 고칠 단서가 없으므로 한국어 안내로 번역한다
+// SDK 원문 오류(404 status code 등)는 사람이 고칠 단서가 없므로 한국어 안내로 번역한다
 function friendly(e, p, model, url) {
   const status = e?.status ?? e?.response?.status;
   const raw = String(e?.message || e).slice(0, 240);
