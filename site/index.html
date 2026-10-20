@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Virtual Company — 직원은 AI이고, 사장은 당신입니다</title>
+<meta name="description" content="회사 목표를 넣으면 AI 대표가 업무를 쪼개고 팀원에게 지시하고 보고합니다. 브라우저와 실제 PC까지 직접 조작하는, 내 컴퓨터에서 도는 가상 회사 시뮬레이터.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Virtual Company — 직원은 AI이고, 사장은 당신입니다">
+<meta property="og:description" content="AI 직원 5명이 메신저로 대화하고 업무를 위임하고 실제 PC를 조작합니다. npm install 한 번으로 내 컴퓨터에서 실행됩니다.">
+<meta property="og:locale" content="ko_KR">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='4' width='20' height='20' rx='6' fill='%23111'/%3E%3Crect x='10' y='10' width='20' height='20' rx='6' fill='%23ddd'/%3E%3Crect x='6' y='6' width='20' height='20' rx='6' fill='%23111'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="top">
+  <a class="wordmark" href="#top"><span class="mark" aria-hidden="true"></span>Virtual&nbsp;Company</a>
+  <nav class="tnav">
+    <a href="#flow">작동 방식</a>
+    <a href="#roster">직원</a>
+    <a href="#controls">운영 자유도</a>
+    <a href="#safety">안전</a>
+    <a href="#run">실행</a>
+  </nav>
+  <a class="tbtn" id="ghTop" href="https://github.com/purplemacaron/virtual-company" target="_blank" rel="noopener">GitHub</a>
+</header>
+
+<main id="top">
+
+  <!-- 히어로: 앱의 오피스 뷰를 그대로 재현 -->
+  <section class="hero">
+    <div class="hsay">
+      <p class="eyebrow">self-hosted · node · v2.0</p>
+      <h1>직원은 AI이고<br>사장은 당신입니다</h1>
+      <p class="lede">회사 목표를 한 줄 넣으면 AI 대표가 업무를 쪼개 팀원에게 나누고, 사내 메신저로 대화하고, 끝난 일을 보고합니다. 웹 검색과 브라우저는 물론, 허용하면 <b>이 컴퓨터의 마우스와 키보드까지 실제로</b> 움직입니다.</p>
+      <div class="hcta">
+        <a class="btn primary" href="#run">내 컴퓨터에서 실행</a>
+        <a class="btn" id="ghHero" href="https://github.com/purplemacaron/virtual-company" target="_blank" rel="noopener">저장소 보기</a>
+      </div>
+      <p class="hnote"><span class="warn-dot"></span>PC 조작은 기본 꺼져 있습니다. 설정의 마스터 스위치를 켜야 도구로 노출됩니다.</p>
+    </div>
+
+    <div class="hfloor" aria-label="가상 회사 오피스 미리보기">
+      <div class="floor">
+        <article class="desk is-thinking">
+          <div class="bubble" data-bubble>업무 검토 중</div>
+          <div class="monitor"><div class="screen" data-screen="클로이"></div></div>
+          <div class="stand" aria-hidden="true"></div>
+          <div class="person" aria-hidden="true"><div class="head" style="background:#111">클</div><div class="body"></div></div>
+          <div class="table" aria-hidden="true"></div>
+          <div class="meta"><b>클로이</b><span class="rank">대표</span><div class="role">CEO · 전략 총괄</div><span class="chip model">Anthropic · Opus</span></div>
+        </article>
+        <article class="desk is-working">
+          <div class="bubble" data-bubble>마우스 클릭 · (480, 320)</div>
+          <div class="monitor"><div class="screen" data-screen="소피아"></div></div>
+          <div class="stand" aria-hidden="true"></div>
+          <div class="person" aria-hidden="true"><div class="head" style="background:#4f46e5">소</div><div class="body"></div></div>
+          <div class="table" aria-hidden="true"></div>
+          <div class="meta"><b>소피아</b><span class="rank">이사</span><div class="role">개발 리드 · PC 조작</div><span class="chip model">Playwright</span><span class="chip">컴퓨터 유즈</span></div>
+        </article>
+        <article class="desk">
+          <div class="bubble" data-bubble>대기 중</div>
+          <div class="monitor"><div class="screen" data-screen="지피"></div></div>
+          <div class="stand" aria-hidden="true"></div>
+          <div class="person" aria-hidden="true"><div class="head" style="background:#10a37f">지</div><div class="body"></div></div>
+          <div class="table" aria-hidden="true"></div>
+          <div class="meta"><b>지피</b><span class="rank">팀장</span><div class="role">리서처</div><span class="chip model">OpenAI · GPT-5</span><span class="chip">웹 검색</span></div>
+        </article>
+        <article class="desk">
+          <div class="bubble" data-bubble>대기 중</div>
+          <div class="monitor"><div class="screen" data-screen="하이쿠"></div></div>
+          <div class="stand" aria-hidden="true"></div>
+          <div class="person" aria-hidden="true"><div class="head" style="background:#d97706">하</div><div class="body"></div></div>
+          <div class="table" aria-hidden="true"></div>
+          <div class="meta"><b>하이쿠</b><span class="rank">사원</span><div class="role">어시스턴트</div><span class="chip model">Claude Haiku</span></div>
+        </article>
+      </div>
+      <p class="fcap">오피스 탭 — 각 책상은 자기 모니터(브라우저·PC 화면)와 현재 활동을 보여줍니다</p>
+    </div>
+  </section>
+
+  <!-- 작동 방식: 실제로 순서가 있는 과정 -->
+  <section class="band" id="flow">
+    <div class="bhead">
+      <p class="eyebrow">engine.js</p>
+      <h2>한 번의 업무가 지나가는 길</h2>
+      <p class="bsub">모든 직원은 1초마다 자기 수신함과 배정된 업무를 들여다봅니다. 아래는 그 루프가 실제로 찍는 활동 로그 문구입니다.</p>
+    </div>
+    <ol class="steps">
+      <li><span class="sfn">nextJob()</span><h3>일을 집는다</h3><p>메신저에 답할 메시지가 쌓였거나, todo 상태의 업무가 배정되면 그 순서대로 깨어납니다. 아무도 없으면 대기합니다.</p></li>
+      <li><span class="sfn">chat()</span><h3>생각한다</h3><p>직원마다 다른 모델·다른 키로 도구 호출을 시도합니다. 팀 구성과 직급, 회사 목표가 시스템 지침으로 들어갑니다.</p></li>
+      <li><span class="sfn">runTool()</span><h3>도구를 쓴다</h3><p>웹 검색, 페이지 읽기, 클릭·입력, 마우스 드래그, MCP 도구까지. 허용되지 않은 도구는 호출 자체가 거부됩니다.</p></li>
+      <li><span class="sfn">completeTask()</span><h3>보고한다</h3><p>결과를 지시자에게 보냅니다. 오너가 시킨 일이면 1:1 대화로, 상사가 시킨 일이면 상사 수신함으로 올라갑니다.</p></li>
+    </ol>
+  </section>
+
+  <!-- 직원 -->
+  <section class="band alt" id="roster">
+    <div class="bhead">
+      <p class="eyebrow">기본 채용 상태</p>
+      <h2>5명으로 시작합니다</h2>
+      <p class="bsub">이름·직급·직무·모델·성격·색상·도구 권한은 모두 UI에서 고칠 수 있고, 몇 명이라도 새로 채용할 수 있습니다.</p>
+    </div>
+    <div class="roster">
+      <article class="rcard">
+        <div class="rhead"><span class="av" style="background:#111">클</span><div><b>클로이</b><span class="rank">대표</span></div></div>
+        <p class="rrole">CEO · 전략 총괄</p>
+        <p class="rline">목표를 실행 가능한 업무로 쪼개고, 팀원 특성에 맞게 배분하고, 결과를 취합해 오너에게 보고합니다.</p>
+        <div class="rchips"><span class="chip">Anthropic</span><span class="chip">claude-opus-5-5</span><span class="chip">MCP 전체</span></div>
+      </article>
+      <article class="rcard">
+        <div class="rhead"><span class="av" style="background:#4f46e5">소</span><div><b>소피아</b><span class="rank">이사</span></div></div>
+        <p class="rrole">개발 리드 · PC 조작 담당</p>
+        <p class="rline">기술 조사, 프로토타입, 웹 자동화, 실제 PC 조작까지 도맡는 만능 엔지니어.</p>
+        <div class="rchips"><span class="chip">Playwright</span><span class="chip">컴퓨터 유즈</span><span class="chip">MCP 전체</span></div>
+      </article>
+      <article class="rcard">
+        <div class="rhead"><span class="av" style="background:#10a37f">지</span><div><b>지피</b><span class="rank">팀장</span></div></div>
+        <p class="rrole">리서처</p>
+        <p class="rline">웹 검색과 자료 조사를 담당합니다. 출처를 반드시 남깁니다.</p>
+        <div class="rchips"><span class="chip">OpenAI</span><span class="chip">gpt-5</span><span class="chip">브라우저</span></div>
+      </article>
+      <article class="rcard">
+        <div class="rhead"><span class="av" style="background:#1a73e8">제</span><div><b>제미</b><span class="rank">사원</span></div></div>
+        <p class="rrole">마케터</p>
+        <p class="rline">시장·경쟁사 분석과 카피라이팅. 빠른 응답이 필요한 일에 알맞습니다.</p>
+        <div class="rchips"><span class="chip">Gemini</span><span class="chip">2.5 flash</span><span class="chip">웹 검색</span></div>
+      </article>
+      <article class="rcard">
+        <div class="rhead"><span class="av" style="background:#d97706">하</span><div><b>하이쿠</b><span class="rank">사원</span></div></div>
+        <p class="rrole">어시스턴트</p>
+        <p class="rline">문서 정리, 요약, 간단한 조사 업무를 값싸고 빠르게 처리합니다.</p>
+        <div class="rchips"><span class="chip">Claude Haiku</span><span class="chip">저비용</span></div>
+      </article>
+      <article class="rcard add">
+        <div class="rhead"><span class="av">+</span><div><b>직원 채용</b><span class="rank">직급 4단계</span></div></div>
+        <p class="rrole">대표 · 이사 · 팀장 · 사원</p>
+        <p class="rline">직급표 자체도 편집 가능합니다. 자기보다 낮은 직급에게만 업무를 지시할 수 있어, 위임 구조가 그대로 권한이 됩니다.</p>
+        <div class="rchips"><span class="chip">이름·직무·성격</span><span class="chip">모델·키</span><span class="chip">도구 권한</span></div>
+      </article>
+    </div>
+  </section>
+
+  <!-- 운영 자유도: 스펙 시트 -->
+  <section class="band" id="controls">
+    <div class="bhead">
+      <p class="eyebrow">settings</p>
+      <h2>무엇을 얼마나 고칠 수 있나</h2>
+      <p class="bsub">설정 탭 한 곳에서 관리합니다. 아래 숫자는 기본값 그대로의 개수입니다.</p>
+    </div>
+    <div class="specs">
+      <div class="spec">
+        <h3>모델 · 25개 프로바이더</h3>
+        <p class="sdesc">직원마다 다른 제공사와 모델과 개인 API 키를 붙일 수 있습니다. 개인 키가 없으면 그 제공사의 전역 키를 쓰고, 로컬은 키 없이 동작합니다.</p>
+        <ul class="mono">
+          <li>cloud<span>Anthropic · OpenAI · Gemini · Groq · DeepSeek · Mistral · xAI · Together · Fireworks · Cerebras · SambaNova · NVIDIA NIM · GitHub Models · Perplexity · Cohere · Kimi · GLM · MiniMax · Azure</span></li>
+          <li>aggregator<span>OpenRouter</span></li>
+          <li>local<span>Ollama · LM Studio · llama.cpp · vLLM · 커스텀(OpenAI 호환) — Base URL 직접 입력</span></li>
+        </ul>
+      </div>
+      <div class="spec">
+        <h3>웹 검색 · 8개 엔진</h3>
+        <p class="sdesc">자동 모드는 키가 채워진 엔진만 정해진 순서로 시도하고, 실패하면 다음 엔진으로 넘어갑니다. 직원이 작업 중에 엔진을 바꿀 수도 있습니다.</p>
+        <ul class="mono">
+          <li>key<span>tavily · serper · exa · brave · google(cse) · serpapi</span></li>
+          <li>self-host<span>searxng — URL만 있으면 됨</span></li>
+          <li>no-key<span>duckduckgo — 아무것도 넣지 않아도 되는 최후의 수단</span></li>
+        </ul>
+      </div>
+      <div class="spec">
+        <h3>MCP · 프리셋 9개</h3>
+        <p class="sdesc">프리셋을 고르면 명령어가 채워지고 "추가 후 바로 연결"이 등록과 접속을 한 번에 끝냅니다. 서버마다 켜고 끌 수 있고, 어느 직원에게 허용할지 따로 정합니다.</p>
+        <ul class="mono">
+          <li>stdio<span>playwright · puppeteer · filesystem · memory · sequential-thinking · fetch · github · sqlite · everything</span></li>
+          <li>http<span>StreamableHTTP URL · 헤더 인증</span></li>
+          <li>grant<span>전체 허용 / 서버별 선택 / 전 직원 일괄 허용</span></li>
+        </ul>
+      </div>
+      <div class="spec">
+        <h3>권한 · 도구 4종</h3>
+        <p class="sdesc">직원 개별로 웹 검색, Playwright 브라우저, 컴퓨터 유즈, MCP를 켜고 끕니다. 컴퓨터 유즈는 전역 마스터 스위치가 꺼져 있으면 권한이 있어도 노출되지 않습니다.</p>
+        <ul class="mono">
+          <li>core<span>send_message · assign_task · complete_task · list_tasks</span></li>
+          <li>web<span>web_search · search_status · fetch_url</span></li>
+          <li>browser<span>navigate · click · fill · press · scroll · read · tabs · screenshot</span></li>
+          <li>computer<span>screenshot · click · drag · type · key · scroll · wait</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 안전 -->
+  <section class="band warnband" id="safety">
+    <div class="wnote">
+      <p class="eyebrow">읽고 실행하세요</p>
+      <h2>실제 PC를 조작합니다</h2>
+      <p>컴퓨터 유즈를 켜면 AI가 이 컴퓨터의 마우스와 키보드를 실제로 움직입니다. 가상 머신이나 버려둘 계정에서 돌리는 것을 권합니다. 첫 실행이라면 <code class="mono">MAX_STEPS=8</code>처럼 단계 수를 짧게 잡아 두세요.</p>
+      <ul class="slist">
+        <li><b>기본은 안전쪽.</b> PC 조작 마스터 스위치와 브라우저 헤드리스 모드는 꺼짐/켜짐 상태로 시작합니다.</li>
+        <li><b>비상 정지.</b> 상단의 일시정지는 진행 중인 사고와 도구 호출을 즉시 끊고, 마우스·키보드 점유를 해제합니다.</li>
+        <li><b>되돌릴 수 없는 행동 금지.</b> 파일 삭제·결제·송금·계정 설정 변경·메일 발송은 오너의 명시적 허락 없이 하지 못하도록 지침에 들어 있습니다.</li>
+        <li><b>키는 브라우저로 내려오지 않습니다.</b> 화면과 WebSocket에는 앞 네 글자만 마스킹된 형태(<code class="mono">••••1234</code>)로 전달됩니다.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 실행 -->
+  <section class="band" id="run">
+    <div class="bhead">
+      <p class="eyebrow">3 commands</p>
+      <h2>실행해 보기</h2>
+      <p class="bsub">Node 18+면 됩니다. <code class="mono">npm install</code>이 Chromium까지 함께 설치합니다.</p>
+    </div>
+    <div class="termwrap">
+      <div class="term">
+        <div class="tbar"><i></i><i></i><i></i><span>terminal</span></div>
+        <pre class="mono"><code><span class="p">git clone https://github.com/purplemacaron/virtual-company.git</span>
+<span class="p">cd</span> virtual-company
+<span class="p">npm install</span>
+<span class="p">npm start</span>
+  <span class="c">Virtual Company → http://localhost:3000</span></code></pre>
+      </div>
+      <div class="envcard">
+        <h3>환경 변수</h3>
+        <ul class="mono evn">
+          <li>PORT<span>3000</span></li>
+          <li>DATA_FILE<span>./data.json</span></li>
+          <li>MAX_STEPS<span>업무당 최대 사고 단계</span></li>
+        </ul>
+        <h3>첫 실행 순서</h3>
+        <ol class="first">
+          <li>설정 탭에서 쓸 모델의 API 키를 넣습니다.</li>
+          <li>오너로서 회사 목표를 한 줄 적습니다.</li>
+          <li>업무 시작을 누르고 오피스 탭에서 지켜봅니다.</li>
+        </ol>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="fleft"><span class="mark" aria-hidden="true"></span><b>Virtual Company</b><span class="fsub">직접 켜서 굴리는 1인 회사</span></div>
+  <div class="fright mono">
+    <a href="#flow">작동 방식</a><a href="#roster">직원</a><a href="#controls">설정</a><a href="#safety">안전</a><a href="#run">실행</a>
+  </div>
+</footer>
+
+<script src="site.js"></script>
+</body>
+</html>
