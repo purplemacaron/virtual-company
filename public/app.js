@@ -527,7 +527,8 @@ const updaters = {
         <span class="chip model">${esc(provLabel(e.provider))} · ${esc(MODEL(e.model))}</span>${keyBadge(e)}${e.queue ? `<span class="chip">대기 ${e.queue}</span>` : ''}${e.maxSteps ? `<span class="chip" title="이 직원에게 허용된 사고 단계">추론 ${e.maxSteps}</span>` : ''}${teamChips(e.id)}
         ${toolChips(e)}${ib('이 직원의 기억 · 대기 메시지 초기화', 'reset', 'danger deskdel', `data-ereset="${e.id}"`)}${thoughtLine(e)}</div></div>`;
     }).join('');
-    $('#feed').innerHTML = S.logs.slice(-100).reverse().map(l => `<div class="log ${l.kind}"><span class="t">${time(l.ts)}</span><span class="who" style="color:${col(l.empId)}">${esc(nm(l.empId))}</span>${esc(l.text)}</div>`).join('') || '<div class="status">아직 활동이 없습니다</div>';
+    // 활동 피드는 폭이 좁다. 이름을 글자로 앞세우면 한 글자씩 잘리므로 사진으로 알린다.
+    $('#feed').innerHTML = S.logs.slice(-100).reverse().map(l => `<div class="log ${l.kind}"><span class="t">${time(l.ts)}</span>${av(l.empId, `width:18px;height:18px;font-size:9px;box-shadow:inset 0 0 0 2px ${col(l.empId)}`)}<span class="ltxt" title="${esc(nm(l.empId))}">${esc(l.text)}</span></div>`).join('') || '<div class="status">아직 활동이 없습니다</div>';
     renderBanner(); renderAppr(); renderRes();
   },
   tasks() {
