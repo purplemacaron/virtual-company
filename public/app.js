@@ -334,6 +334,9 @@ const shells = {
   settings: () => {
     const { providers, providerGroups, searchEngines, searchOrder } = S.catalog;
     const keys = S.settings.keys || {}, sc = S.settings.search || {};
+    const c = S.counts || {};
+    const wipeRow = (k, title, hint, count) => `<div class="wrow"><div class="wt"><b>${title}</b><span>${hint}</span></div>
+      <em>${count}</em>${ib(`${title} 지우기`, 'trash', 'danger', `data-wipe="${k}"`)}</div>`;
     const keyLine = (id, label, hint) => `<label>${esc(label)}</label><div class="kline">
       <input data-key="${id}" placeholder="${esc(keys[id] || hint || '키 입력')}" autocomplete="off">
       ${ib(`${label} 키 지우기`, 'close', 'x', `data-clearkey="${esc(id)}"`)}</div>`;
@@ -362,7 +365,7 @@ const shells = {
     <pre class="out" id="searchOut">키를 넣지 않으면 DuckDuckGo로 시도합니다. 결과를 여기에 보여줍니다.</pre>
     <div class="btns">${ib('웹 검색 설정 저장', 'save', 'primary', 'id="saveSearch"')}</div></div>
     <div class="card"><h3>운영 설정</h3>
-    <label>업무당 최대 사고 단계 (1~60)</label><input id="cfgSteps" type="number" min="1" max="60" value="${esc(appCfg().maxSteps ?? 8)}">
+    <label>업무당 최대 사고 단계 (1~60) · 직원이 자기 단계를 따로 정하면 그 값을 씁니다</label><input id="cfgSteps" type="number" min="1" max="60" value="${esc(appCfg().maxSteps ?? 8)}">
     <label>브라우저 시작 URL (비우면 about:blank에서 대기)</label><input id="cfgStart" placeholder="https://duckduckgo.com" value="${esc(appCfg().startUrl || '')}">
     <div class="checks" style="margin-top:14px">
       <label><input type="checkbox" id="cfgHeadless" ${appCfg().headless !== false ? 'checked' : ''}>Playwright 헤드리스</label>
@@ -370,7 +373,15 @@ const shells = {
     </div>
     <div class="warn">PC 조작 마스터 스위치입니다. 꺼 두면 컴퓨터 유즈 권한을 준 직원에게도 도구가 노출되지 않습니다. 켜면 AI가 이 컴퓨터의 실제 마우스·키보드를 움직입니다.</div>
     <label>회사 이름 · 사원 수 · 직급 단계는 조직 탭에서 조정합니다. 현재 직급 ${S.ranks.length}단계 / 직원 ${S.employees.length}명</label>
-    <div class="btns">${ib('활동 로그 지우기', 'trash', 'danger', 'id="clearLogs"')}${ib('운영 설정 저장', 'save', 'primary', 'id="saveCfg"')}</div></div>
+    <div class="btns">${ib('운영 설정 저장', 'save', 'primary', 'id="saveCfg"')}</div></div>
+    <div class="card"><h3>기록 정리</h3>
+    <div class="status">한 번 지우면 되돌릴 수 없습니다. 개수는 지금 서버에 쌓여 있는 양입니다. 직원 한 명의 기억은 사무실의 그 직원 책상에서 비웁니다.</div>
+    ${wipeRow('memory', '모든 직원 대화 기억', '키·사진·직급·팀·도구 권한은 그대로 · 진행 중인 업무의 맥락도 사라집니다', `${c.memory ?? 0}줄 · 대기 ${c.queue ?? 0}건`)}
+    ${wipeRow('tasks', '완료된 업무와 결과물', '써 둔 보고서 .md 파일은 지우지 않습니다 · 진행·멈춤·실패 업무는 그대로', `${c.done ?? 0}건`)}
+    ${wipeRow('messages', '채널 · 1:1 대화 기록', '직원들이 나눈 대화만 사라지고 업무 카드는 남습니다', `${c.messages ?? 0}건`)}
+    ${wipeRow('cancelled', '취소 목록(톤스톤)', '비우면 이전에 지웠던 일을 같은 제목으로 다시 지시할 수 있습니다', `${c.cancelled ?? 0}건`)}
+    ${wipeRow('logs', '활동 로그', '오른쪽 활동 피드 · 서버는 계속 동작합니다', `${c.logs ?? 0}건`)}
+    <div class="warn">API 키는 여기서 지우지 않습니다. 키는 전역 기본 API 키 칸과 직원 편집에서 각각 관리합니다.</div></div>
     <div class="card"><h3>MCP 서버 연결</h3>
     <label>프리셋</label><select id="mcpPreset"><option value="">직접 입력</option>
       ${S.catalog.mcpPresets.map(p => `<option value="${esc(p.key)}">${esc(p.label)}</option>`).join('')}</select>
@@ -391,9 +402,14 @@ const shells = {
 
 // ---------- 회사 서류 양식 ----------
 // 결재 서류와 결과물은 같은 회사의 종이 한 종류다 — 생김새를 하나의 양식으로 통일한다.
+// 로고는 헤더와 같은 규칙으로 마크업에 넣지 않고, 종이가 붙은 뒤 src만 대입한다.
+const paintDocLogo = () => document.querySelectorAll('.dlogo').forEach(img => {
+  img.hidden = !S.company.logo;
+  if (S.company.logo) img.src = S.company.logo;
+});
 function docForm(o) {
   return `<div class="doc${o.stamp ? ' stamped ' + (o.stampKind || '') : ''}">
-    <div class="dhead"><b>${esc(o.org)}</b><span>${esc(o.kind)} · ${esc(o.no)}</span></div>
+    <div class="dhead"><img class="dlogo" alt="" hidden><b>${esc(o.org)}</b><span>${esc(o.kind)} · ${esc(o.no)}</span></div>
     <div class="dform">
       <div class="dcell"><span>기안</span><b>${esc(o.from)}</b></div>
       <div class="dcell"><span>수신</span><b>${esc(o.to)}</b></div>
@@ -470,6 +486,7 @@ function showResult(id) {
     <div class="btns"><button type="button" class="lbl" id="r_copy" title="결과 텍스트 복사">${ico('copy', 15)}결과 복사</button>
       <button type="button" class="primary lbl" id="r_close" title="닫기">${ico('close', 15)}닫기</button></div>`;
   $('#modal').classList.remove('hidden');
+  paintDocLogo();
   $('#r_copy').onclick = async () => {
     try { await navigator.clipboard.writeText(t.result || ''); toast('결과를 복사했습니다'); }
     catch { toast('복사 권한이 없어 결과를 아래처럼 직접 골라 주세요', 'err'); }
@@ -493,6 +510,12 @@ function watchAppr() {
   pendSeen = pend.length;
 }
 
+const thoughtLine = e => {
+  const t = (e.thought || '').trim();
+  if (!t) return '<div class="thought none">생각 기록 없음</div>';
+  const cut = t.length > 240 ? t.slice(0, 240) + ' …' : t;
+  return `<div class="thought" title="${esc(t)}">${ico('chat', 12)}<span>${esc(cut)}</span></div>`;
+};
 const updaters = {
   office() {
     $('#desks').innerHTML = S.employees.map(e => {
@@ -501,8 +524,8 @@ const updaters = {
         <div class="monitor">${sc ? `<img src="data:image/jpeg;base64,${sc.img}"><span class="tag">${esc(sc.url)}</span>` : '<div class="code"><i></i><i></i><i></i></div>'}</div><div class="stand"></div>
         <div class="person">${e.avatar ? `<div class="head hasimg"><img src="${e.avatar}" alt="${esc(e.name)} 사진"></div>` : `<div class="head" style="background:${e.color}">${esc(e.name[0])}</div>`}<div class="body"></div></div><div class="table"></div>
         <div class="meta"><span class="dot"></span><b>${esc(e.name)}</b><span class="rank">${esc(e.rank)}</span><div class="role">${esc(e.role)}</div>
-        <span class="chip model">${esc(provLabel(e.provider))} · ${esc(MODEL(e.model))}</span>${keyBadge(e)}${e.queue ? `<span class="chip">대기 ${e.queue}</span>` : ''}${teamChips(e.id)}
-        ${toolChips(e)}</div></div>`;
+        <span class="chip model">${esc(provLabel(e.provider))} · ${esc(MODEL(e.model))}</span>${keyBadge(e)}${e.queue ? `<span class="chip">대기 ${e.queue}</span>` : ''}${e.maxSteps ? `<span class="chip" title="이 직원에게 허용된 사고 단계">추론 ${e.maxSteps}</span>` : ''}${teamChips(e.id)}
+        ${toolChips(e)}${ib('이 직원의 기억 · 대기 메시지 초기화', 'reset', 'danger deskdel', `data-ereset="${e.id}"`)}${thoughtLine(e)}</div></div>`;
     }).join('');
     $('#feed').innerHTML = S.logs.slice(-100).reverse().map(l => `<div class="log ${l.kind}"><span class="t">${time(l.ts)}</span><span class="who" style="color:${col(l.empId)}">${esc(nm(l.empId))}</span>${esc(l.text)}</div>`).join('') || '<div class="status">아직 활동이 없습니다</div>';
     renderBanner(); renderAppr(); renderRes();
@@ -642,7 +665,7 @@ function update() { updaters[tab]?.(); }
 // ---------- 이벤트 ----------
 document.addEventListener('click', async e => {
   if (!$('#modal').classList.contains('hidden')) return;
-  const t = e.target.closest('[data-id],[data-ch],[data-del],[data-done],[data-pause],[data-resume],[data-yes],[data-no],[data-apprs],[data-res],[data-edit],[data-chedit],[data-chdel],[data-team],[data-teamdel],[data-clearkey],[data-mcpdel],[data-mcpgrant],[data-rundetach],[data-tfdetach],#newCh,#addEmp,#addTeam,#saveRanks,#saveSet,#saveCfg,#saveSearch,#searchTest,#mcpAdd,#clearLogs,#saveMcp,#recon,#banHide,#logoDel');
+  const t = e.target.closest('[data-id],[data-ch],[data-del],[data-done],[data-pause],[data-resume],[data-yes],[data-no],[data-apprs],[data-res],[data-edit],[data-chedit],[data-chdel],[data-team],[data-teamdel],[data-clearkey],[data-mcpdel],[data-mcpgrant],[data-rundetach],[data-tfdetach],[data-ereset],[data-wipe],#newCh,#addEmp,#addTeam,#saveRanks,#saveSet,#saveCfg,#saveSearch,#searchTest,#mcpAdd,#saveMcp,#recon,#banHide,#logoDel');
   if (!t) return;
   if (t.dataset.id && tab === 'office') { chan = dm('user', t.dataset.id); $('#tabs [data-tab=chat]').click(); }
   else if (t.dataset.ch) { chan = t.dataset.ch; update(); }
@@ -675,7 +698,21 @@ document.addEventListener('click', async e => {
     } });
     toast(`운영 설정 저장 완료 · PC 조작 ${pcOn ? '허용' : '차단'}\n헤드리스 브라우저 설정은 다음 브라우저 사용부터 반영됩니다.`); build();
   }
-  else if (t.id === 'clearLogs') api('DELETE', '/api/logs');
+  else if (t.dataset.ereset) {
+    const who = emp(t.dataset.ereset);
+    if (who && confirm(`${who.name}님의 대화 기억과 대기 메시지를 초기화할까요?\n키·사진·직급·팀·도구 권한은 그대로 남습니다.`)) {
+      const r = await api('POST', '/api/employees/' + who.id + '/reset');
+      if (!r.error) toast(`${who.name}님의 기억을 비웠습니다 · 진행 중이던 업무 맥락도 사라집니다`);
+    }
+  }
+  else if (t.dataset.wipe) {
+    const names = { memory: '모든 직원의 대화 기억과 대기 메시지', tasks: '완료된 업무와 결과물', messages: '채널 · 1:1 대화 기록', cancelled: '취소 목록', logs: '활동 로그' };
+    const what = t.dataset.wipe, label = names[what] || what;
+    if (confirm(`"${label}"을(를) 지울까요? 되돌릴 수 없습니다.`)) {
+      const r = await api('POST', '/api/wipe', { what });
+      if (!r.error) { toast(`지웠습니다 · ${r.summary}`); build(); }
+    }
+  }
   else if (t.id === 'logoDel') { logoDraft = ''; paintLogoPrev(); toast('로고를 지웠습니다 · 아래 "전역 설정 저장"을 눌러야 실제로 사라집니다'); }
   // 이번 가동의 첨부 = 서버 목록이 정답. 빼면 즉시 저장해 다른 창과 어긋나지 않게 한다.
   else if (t.dataset.rundetach) {
@@ -818,6 +855,9 @@ function editEmp(e) {
     <div class="status">정사각으로 가운데를 잘라 ${AV_PX}px 사진으로 저장합니다. 사진이 없으면 아래 색상과 이니셜을 씁니다.</div>
     <label>색상</label><input id="f_color" type="color" value="${x.color}" style="height:40px;padding:4px">
     <label>성격 · 업무 지침</label><textarea id="f_persona">${esc(x.persona)}</textarea>
+    <label>추론 단계 · 한 번의 지시에서 반복할 사고 단계 수 (1~60)</label>
+    <input id="f_maxSteps" type="number" min="1" max="60" placeholder="비우면 회사 설정 ${appCfg().maxSteps ?? 8}단계" value="${x.maxSteps || ''}">
+    <div class="status">업무가 길어 중간에 끊긴다면 올리고, 단순 업무에는 내려 불필요한 호출을 줄입니다. CEO(오너·대표) 메시지는 단계 설정과 무관하게 항상 모든 작업보다 먼저 처리됩니다.</div>
     <label>사용 가능한 도구</label><div class="checks">${Object.entries(TOOLS).map(([k, l]) => `<label><input type="checkbox" data-tool="${k}" ${(k === 'mcp' ? mcpOn : !!t[k]) ? 'checked' : ''}>${l}</label>`).join('')}</div>
     ${srvs.length ? `<label>허용할 MCP 서버${mcpOn ? '' : ' · MCP를 켜야 선택할 수 있습니다'}</label><div class="checks" id="mcpServers"><label><input type="checkbox" id="mcpAll" ${allSel ? 'checked' : ''}>전체 (뒤에 추가되는 서버 포함)</label>
       ${srvs.map(s => `<label><input type="checkbox" data-mcp="${esc(s)}" ${t.mcp === 'all' || Array.isArray(t.mcp) && t.mcp.includes(s) ? 'checked' : ''}>${esc(s)}</label>`).join('')}</div>`
@@ -906,6 +946,8 @@ function editEmp(e) {
   const save = async () => {
     const body = { tools: {} };
     ['name', 'rank', 'role', 'provider', 'model', 'baseUrl', 'color', 'persona'].forEach(k => body[k] = $('#f_' + k).value.trim());
+    const ms = Math.round(+$('#f_maxSteps').value);
+    body.maxSteps = ms ? Math.min(60, Math.max(1, ms)) : 0;      // 0 = 회사 설정을 따라간다
     document.querySelectorAll('[data-tool]').forEach(c => body.tools[c.dataset.tool] = c.checked);
     body.avatar = avatar;
     body.teams = [...document.querySelectorAll('[data-teamcb]')].filter(c => c.checked).map(c => c.dataset.teamcb);
@@ -1024,6 +1066,7 @@ function showApproval(id) {
       <button type="button" class="primary lbl" id="a_yes" title="승인">${ico('check', 15)}승인</button>` : ''}
       ${ib('닫기', 'close', '', 'id="a_close"')}</div>`;
   $('#modal').classList.remove('hidden');
+  paintDocLogo();
   const note = () => $('#a_note')?.value.trim() || '';
   // 이미 서명된 서류를 기록에서 다시 열 때는 서명 버튼이 렌더되지 않는다 — null 에 붙지 않게 한다.
   $('#a_yes')?.addEventListener('click', () => sign(a.id, true, note()));

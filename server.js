@@ -3,7 +3,7 @@ import http from 'http';
 import fs from 'fs';
 import path from 'path';
 import { WebSocketServer } from 'ws';
-import { state, changed, publicState, onEvent, screens, uid, postMessage, leader, flush, saveNow, cancelTask, decideApproval, safeReportName, reportDir, saveAttachment, attList, findAttachment, attachmentBlock, uploadDir, pruneUploads, kb } from './store.js';
+import { state, changed, publicState, onEvent, screens, uid, postMessage, leader, flush, saveNow, cancelTask, decideApproval, safeReportName, reportDir, saveAttachment, attList, findAttachment, attachmentBlock, uploadDir, pruneUploads, kb, addLog, wipes } from './store.js';
 import { startEngine, abortAll, stopTask } from './engine.js';
 import { listModels } from './llm.js';
 import { connectMcp, closeAll, resetBrowser, testSearch, mcpServersObj, writeMcpServers } from './tools.js';
@@ -22,7 +22,7 @@ wss.on('connection', ws => {
 });
 
 const ok = res => res.json({ ok: true });
-const EMP_FIELDS = ['name', 'rank', 'role', 'provider', 'model', 'baseUrl', 'persona', 'color', 'tools', 'avatar'];
+const EMP_FIELDS = ['name', 'rank', 'role', 'provider', 'model', 'baseUrl', 'persona', 'color', 'tools', 'avatar', 'maxSteps'];
 // 사진·로고는 브라우저에서 줄인 data URL만 받는다 — 임의 텍스트를 data.json에 박아넣는 통로를 막는다
 const IMAGE = /^data:image\/(?:jpeg|png|webp|gif);base64,[A-Za-z0-9+/=]{1,300000}$/;
 // 마스킹된 값(••••)은 "변경 없음"으로 취급해 클라이언트에 평문 키를 내려보내지 않는다
@@ -260,8 +260,20 @@ app.delete('/api/employees/:id', (req, res) => {
 });
 app.post('/api/employees/:id/reset', (req, res) => {
   const e = state.employees.find(x => x.id === req.params.id);
-  if (e) { e.memory = []; e.inbox = []; changed(); }
+  if (e) { e.memory = []; e.inbox = []; delete e.thought; delete e.cooldownUntil; changed(); saveNow(); }
   ok(res);
+});
+
+// ---------- 기록 정리 ----------
+// 되돌릴 수 없는 동작이라 종류를 화이트리스트로만 받고, 무엇을 얼마나 지웠는지 로그에 남긴다.
+app.post('/api/wipe', (req, res) => {
+  const what = String(req.body?.what || '');
+  const fn = wipes[what];
+  if (!fn) return res.status(400).json({ error: '지울 수 없는 종류입니다' });
+  const summary = fn();
+  addLog('user', `기록 정리 · ${summary}`, 'error');
+  changed(); saveNow();
+  res.json({ ok: true, what, summary });
 });
 
 app.post('/api/tasks', (req, res) => {

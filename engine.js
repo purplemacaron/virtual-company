@@ -1,15 +1,21 @@
-import { state, changed, addLog, postMessage, findEmp, nameOf, completeTask, teamsOf, finishRun, attachmentBlock } from './store.js';
+import { state, changed, addLog, postMessage, findEmp, nameOf, completeTask, teamsOf, finishRun, attachmentBlock, leader } from './store.js';
 import { chat } from './llm.js';
 import { buildTools, runTool } from './tools.js';
 import { releaseDesktop } from './desktop.js';
 
 const ENV_STEPS = process.env.MAX_STEPS ? Number(process.env.MAX_STEPS) : null;
-const maxSteps = () => ENV_STEPS || Number(state.settings.app.maxSteps) || 8;
+// 직원마다 정한 단계가 있으면 그 값, 없으면 회사 기본값. 환경 변수가 항상 이긴다.
+const maxSteps = e => {
+  const n = ENV_STEPS || Number(e?.maxSteps) || Number(state.settings.app.maxSteps) || 8;
+  return Math.min(60, Math.max(1, Math.round(n)));
+};
 const busy = new Set();
 const runs = new Map();                        // empId → 진행 중인 실행 정보(취소·결재 대기 여부)
 let gen = 0;                                  // 일시정지(비상정지) 시 증가 → 진행 중인 작업 중단
 
 export function startEngine() { setInterval(tick, 1000); }
+// CEO로 취급하는 발신자: 회사 오너 본인, 그리고 오너의 지시를 실어 나르는 대표 직원. 둘 다 모든 작업보다 우선한다.
+const fromBoss = m => m.from === 'user' || m.from === leader()?.id;
 export function abortAll() { gen++; }
 // 오너가 특정 업무를 지우거나 멈추면 그 실행만 그 자리에서 끊는다. 다른 직원의 일은 계속된다.
 export function stopTask(taskId) {
@@ -18,6 +24,9 @@ export function stopTask(taskId) {
 
 function tick() {
   for (const e of state.employees) {
+    // CEO(오너) 메시지는 모든 작업보다 우선한다. 일하는 중이면 지금 단계가 끝나는 즉시 일을 놓고 그 메시지를 먼저 다루게 시킨다.
+    const r = runs.get(e.id);
+    if (r && !r.preempt && r.job?.type === 'task' && e.inbox.some(fromBoss)) r.preempt = true;
     if (busy.has(e.id) || Date.now() < (e.cooldownUntil || 0)) continue;
     const job = nextJob(e);
     if (job) run(e, job);
@@ -46,7 +55,9 @@ function nextJob(e) {
   // 일시정지 중에는 아무것도 달리지 않는다. 오너의 지시·취소·결재 결과는 대기열에 쌓였다가 업무 시작 때 순서대로 처리된다.
   if (!state.company.running) return null;
   if (e.inbox.length) {
-    const m = e.inbox.shift(); changed();
+    // CEO(오너·대표) 메시지는 먼저 쌓인 다른 답장보다 앞에 나간다.
+    const i = Math.max(0, e.inbox.findIndex(fromBoss));
+    const m = e.inbox.splice(i, 1)[0]; changed();
     if (m.from === 'system') return { type: 'message', channel: null, prompt: `[시스템 알림]\n${m.text}` };
     const who = m.from === 'user' ? `${state.user.name} (회사 오너)` : `${nameOf(m.from)} (${findEmp(m.from)?.rank || ''})`;
     return { type: 'message', channel: m.channel, prompt: `[메시지] ${chName(m.channel)} / 보낸 사람: ${who}\n${m.text}` };
@@ -86,6 +97,7 @@ ${team}
 - 리더라면 목표를 구체적인 업무로 쪼개 직무와 모델 특성에 맞게 배분하세요. 직접 할 수 있는 일은 직접 하세요.
 - 업무가 끝나면 complete_task로 구체적인 결과(조사 내용, 산출물, 출처 링크)를 보고하세요.
 - 오너가 "[업무 취소]"로 알린 일은 즉시 중단하세요. 같은 제목·같은 내용으로 다시 지시하거나 수행하지 않습니다.
+- CEO(오너와 대표)의 메시지는 진행 중인 업무보다 우선합니다. 그런 메시지가 도착하면 하던 업무를 잠시 대기열로 되돌리고 그 메시지부터 처리한 뒤 업무를 이어하세요.
 - 결제·송금·파일 삭제·계정 설정 변경·메일 발송·게시글 발행처럼 되돌릴 수 없는 행동은 실행하기 전에 request_approval로 결재 서류를 상신하고, 승인 응답을 받은 뒤에 실행하세요. 상신 후에는 이번 응답을 거기서 마무리합니다.
 - 받은 메시지에 대한 답은 최종 텍스트로 쓰면 해당 대화방에 자동 전송됩니다(그때는 send_message 불필요). 답할 필요가 없으면 "[무응답]"이라고만 쓰세요.
 - 단순 인사나 "확인했습니다" 같은 의미 없는 메시지는 보내지 마세요.
@@ -176,13 +188,15 @@ async function run(e, job) {
     const defs = buildTools(e);
     e.memory.push({ role: 'user', content: job.prompt });
     let finalText = '';
-    for (let step = 0; step < maxSteps(); step++) {
+    const steps = maxSteps(e);
+    for (let step = 0; step < steps; step++) {
       if (stopped()) break;
-      setStatus(e, 'thinking', '생각 중…');
+      if (ctx.preempt) break;                       // CEO 메시지 때문에 이번 일을 여기서 접는다
+      setStatus(e, 'thinking', `생각 중 ${step + 1}/${steps}`);
       const res = await chat({ provider: e.provider, model: e.model, baseUrl: e.baseUrl, keys: state.settings.keys,
         apiKey: e.apiKey, system: systemPrompt(e), messages: prepare(e.memory), tools: defs });
       e.memory.push({ role: 'assistant', text: res.text || '', toolCalls: res.toolCalls });
-      if (res.text) { finalText = res.text; addLog(e.id, res.text, 'thought'); }
+      if (res.text) { finalText = res.text; e.thought = res.text.slice(0, 600); e.thoughtAt = Date.now(); addLog(e.id, res.text, 'thought'); }
       if (!res.toolCalls.length) break;
 
       const results = [];
@@ -209,6 +223,14 @@ async function run(e, job) {
       // 삭제된 업무는 취소 목록에 남고, 멈춘 업무는 되살리지 않는다.
       if (task && state.cancelled.some(c => c.id === task.id)) return;
       if (task) park(task, 'paused', ctx.cancelled ? '오너가 업무를 취소했습니다' : '일시정지됨');
+      return;
+    }
+    // CEO 메시지를 먼저 처리하라고 세운 것이다. 업무는 멈춤(에러)이 아니라 바로 다음 순번으로 되돌려 둔다.
+    if (ctx.preempt) {
+      if (task && task.status === 'doing') {
+        task.status = 'todo'; delete task.startedAt; delete task.note;
+        addLog(e.id, `CEO 메시지 우선 · #${task.id} ${task.title}를 대기열로 되돌리고 메시지를 먼저 처리합니다`, 'info');
+      }
       return;
     }
     if (ctx.hold) {                               // 결재 대기: 오너 서명 전까지 이 업무는 멈춰 있다

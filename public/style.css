@@ -5,7 +5,7 @@
   --bg:#fafafa;--card:#fff;--line:#ececec;--text:#111;--sub:#8a8a8a;--r:14px;
   --accent:#111;--onaccent:#fff;--ink:#111;--onink:#fff;--focus:#111;
   --field:#fff;--sunk:#f4f4f4;--sunk2:#f6f7f9;--rule:#f3f3f3;--chip:#f3f3f3;--hover:#cfcfcf;
-  --topbg:rgba(255,255,255,.85);--body2:#3f3f46;--prev:#52525b;--dot:#ccc;--codebar:#ddd;--codebar-on:#c9c9ff;--bezel:#1a1a1a;
+  --topbg:rgba(255,255,255,.85);--body2:#3f3f46;--prev:#52525b;--dot:#ccc;--codebar:#ddd;--codebar-on:#a3a3ad;--bezel:#1a1a1a;
   --ok:#16a34a;--err:#d33;--onerr:#fff;--warn-tx:#d97706;--teal:#0f766e;--shadow:rgba(0,0,0,.05);
   --amber-bg:#fffbeb;--amber-line:#fde68a;--amber-tx:#b45309;
   --ok-bg:#ecfdf5;--ok-tx:#047857;--err-bg:#fef2f2;--err-tx:#b91c1c;--grey-bg:#f3f4f6;--grey-tx:#6b7280;
@@ -15,7 +15,7 @@
   --bg:#131316;--card:#1b1b20;--line:#2d2d35;--text:#ececef;--sub:#8f8f9b;
   --accent:#f1f1f4;--onaccent:#15151a;--ink:#e9e9ef;--onink:#15151a;--focus:#c7c7d4;
   --field:#1f1f25;--sunk:#24242b;--sunk2:#24242b;--rule:#28282f;--chip:#2b2b33;--hover:#3c3c47;
-  --topbg:rgba(21,21,26,.86);--body2:#c8c8d3;--prev:#a6a6b3;--dot:#43434d;--codebar:#3a3a45;--codebar-on:#6f6fd8;--bezel:#0d0d11;
+  --topbg:rgba(21,21,26,.86);--body2:#c8c8d3;--prev:#a6a6b3;--dot:#43434d;--codebar:#3a3a45;--codebar-on:#8f8f9b;--bezel:#0d0d11;
   --ok:#4ade80;--err:#ff6b6b;--onerr:#1b0b0b;--warn-tx:#fbbf24;--teal:#2dd4bf;--shadow:rgba(0,0,0,.45);
   --amber-bg:#241d10;--amber-line:#584320;--amber-tx:#f0c675;
   --ok-bg:#12291f;--ok-tx:#6ee7b7;--err-bg:#2a1416;--err-tx:#fda4af;--grey-bg:#25252c;--grey-tx:#a1a1aa;
@@ -86,6 +86,14 @@ main{padding:24px 28px;max-width:1500px;margin:0 auto}
 .role{font-size:12px;color:var(--sub);margin:3px 0 8px}
 .chip{display:inline-block;font-size:11px;padding:3px 8px;border-radius:20px;background:var(--chip);margin:0 4px 4px 0}
 .chip.model{background:var(--ink);color:var(--onink)}
+/* 책상 카드 아래에 그 직원의 마지막 생각을 한 줄 남긴다 — 말풍선(지금 동작)과 짝을 이룬다 */
+.thought{display:flex;gap:6px;align-items:flex-start;margin-top:9px;padding-top:8px;border-top:1px dashed var(--line);font-size:11.5px;line-height:1.55;color:var(--sub)}
+.thought .ic{flex:none;margin-top:2px;opacity:.55}
+.thought span{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.thought.none{color:var(--dot)}
+/* 기억 초기화는 항상 보이는 버튼이 아니다 — 카드에 올라탈 때만 나타난다 */
+.deskdel{position:absolute;top:10px;left:10px;width:30px;height:30px;opacity:0;transition:.15s;z-index:3}
+.desk:hover .deskdel,.desk:focus-within .deskdel{opacity:1}
 .chip.warn-chip{background:var(--amber-bg);color:var(--amber-tx);border:1px solid var(--amber-line)}
 .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--dot);margin-right:6px}
 .s-working .dot{background:#22c55e}.s-thinking .dot{background:#f59e0b}
@@ -151,6 +159,13 @@ pre.out{white-space:pre-wrap;word-break:break-word;max-height:240px;overflow:aut
 .btns{display:flex;gap:8px;margin-top:20px;justify-content:flex-end}
 .status{font-size:12px;color:var(--sub);margin-top:8px;white-space:pre-wrap}
 .warn{font-size:12px;color:var(--amber-tx);background:var(--amber-bg);border:1px solid var(--amber-line);border-radius:10px;padding:10px;margin-top:10px}
+/* 기록 정리 — 한 줄에 대상 · 설명 · 쌓인 개수 · 지우기 버튼 */
+.wrow{display:flex;align-items:center;gap:10px;padding:11px 0;border-top:1px solid var(--line)}
+.wrow .wt{flex:1;min-width:0}
+.wrow .wt b{display:block;font-size:13px;font-weight:600}
+.wrow .wt span{display:block;font-size:11.5px;color:var(--sub);margin-top:2px;line-height:1.45}
+.wrow em{font-style:normal;font-size:11.5px;color:var(--sub);white-space:nowrap;font-variant-numeric:tabular-nums}
+.wrow .ib{width:32px;height:32px}
 .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(8px);background:var(--ink);color:var(--onink);padding:11px 18px;border-radius:12px;font-size:13px;line-height:1.5;box-shadow:0 8px 26px var(--shadow);opacity:0;transition:opacity .18s,transform .18s;z-index:20;max-width:min(560px,90vw);white-space:pre-wrap;pointer-events:none}
 .toast.on{opacity:1;transform:translateX(-50%)}
 .toast.err{background:#b42318;color:#fff}
@@ -186,11 +201,8 @@ pre.out{white-space:pre-wrap;word-break:break-word;max-height:240px;overflow:aut
 /* 결재 서류 · 결과 보고서 — 실제 기안 용지처럼 읽히게: 머릿줄 → 칸표 → 제목 → 본문 줄지 → 결재란 → 인감
    이 블록만 의도적으로 색을 고정한다. 어두운 식탁 위에 놓인 흰 종이 한 장이 밤에도 제일 잘 읽힌다. */
 .doc{position:relative;border:1px solid #d8d5cf;border-radius:5px;background:#fff;color:#111;padding:0;overflow:hidden;box-shadow:0 12px 30px rgba(20,20,20,.07)}
-.doc::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:#b45309}
-.doc.stamped::before{background:#a1a1aa}
-.doc.stamped.approved::before,.doc.stamped.done::before{background:#0f766e}
-.doc.stamped.rejected::before{background:#b91c1c}
-.dhead{display:flex;align-items:baseline;gap:10px;padding:13px 16px 11px;border-bottom:1px solid #d8d5cf;background:#faf9f7}
+.dhead{display:flex;align-items:center;gap:10px;padding:11px 16px;border-bottom:1px solid #d8d5cf;background:#faf9f7}
+.dlogo{height:26px;max-width:110px;object-fit:contain;display:block;flex:none}
 .dhead b{font-size:13px;letter-spacing:.02em}
 .dhead span{margin-left:auto;font-size:11px;color:#8a8478;font-variant-numeric:tabular-nums;white-space:nowrap}
 .dform{display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid #d8d5cf}
@@ -275,6 +287,8 @@ h3 .ic{display:inline-block;vertical-align:-2px;margin-right:5px}
 .res:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 .res .ti{font-weight:600;font-size:13px;margin:3px 0 5px;overflow-wrap:anywhere}
 .res .who{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--sub);margin-bottom:5px}
+/* 결과물 상자의 직원 마크는 색을 쓰지 않는다 — 흰 원에 검은 이니셜, 테두리는 1px만 */
+.res .av{background:#fff!important;color:#111;box-shadow:inset 0 0 0 1px #dedede}
 .res .prev{font-size:11.5px;color:var(--prev);line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .resfoot{border-top:1px dashed var(--line);padding-top:9px;margin-top:2px;display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--sub);min-width:0}
 .resfoot .ic{flex:none}

@@ -87,6 +87,53 @@ export function pruneUploads(keep = 600000) {
     } catch { /* 한 개 실패가 나머지를 막지 못하게 */ }
   }
 }
+
+// ---------- 오너가 비우는 기록 ----------
+// 종류별로 지우는 대상이 다르고 되돌릴 수 없다. 버튼에 개수를 띄우려면 화면 상태에_counts_가 함께 가야 한다.
+export function wipeCounts() {
+  return {
+    memory: state.employees.reduce((n, e) => n + (e.memory?.length || 0), 0),
+    queue: state.employees.reduce((n, e) => n + (e.inbox?.length || 0), 0),
+    done: state.tasks.filter(t => t.status === 'done').length,
+    open: state.tasks.filter(t => t.status !== 'done').length,
+    messages: state.messages.length,
+    cancelled: state.cancelled.length,
+    logs: state.logs.length,
+    uploads: [state.company.attachments || [], ...state.tasks.map(t => t.attachments || [])].flat().length,
+  };
+}
+export const wipes = {
+  // 직원이 자기 기억을 잃으면 진행 중인 업무의 맥락도 사라진다. 키·사진·직급·팀·도구 권한은 건드리지 않는다.
+  memory: () => {
+    const n = wipeCounts();
+    state.employees.forEach(e => { e.memory = []; e.inbox = []; e.activity = '대기 중'; delete e.thought; delete e.cooldownUntil; });
+    return `직원 ${state.employees.length}명의 대화 기억 ${n.memory}줄 · 대기 메시지 ${n.queue}건`;
+  },
+  // 완료 업무만 뽑는다. 멈춤·실패·대기 중인 일은 그대로 남고, 써 놓은 보고서 .md는 지우지 않는다.
+  tasks: () => {
+    const n = wipeCounts();
+    state.tasks = state.tasks.filter(t => t.status !== 'done');
+    // 기본 유예를 지킨다. 아직 지시하지 않고 올려만 둔 파일이 이 정리로 함께 사라지면 안 된다.
+    pruneUploads();
+    return `완료된 업무 ${n.done}건과 그 첨부 원본`;
+  },
+  messages: () => {
+    const n = wipeCounts().messages;
+    state.messages = [];
+    return `대화 기록 ${n}건`;
+  },
+  // 톤스톤을 해제하면 오너가 지웠던 일을 같은 제목으로 다시 지시할 수 있다.
+  cancelled: () => {
+    const n = wipeCounts().cancelled;
+    state.cancelled = [];
+    return `취소 목록 ${n}건 · 같은 제목의 업무를 다시 지시할 수 있습니다`;
+  },
+  logs: () => {
+    const n = wipeCounts().logs;
+    state.logs = [];
+    return `활동 로그 ${n}건`;
+  },
+};
 export const screens = new Map();
 const listeners = new Set();
 export const onEvent = fn => listeners.add(fn);
@@ -236,6 +283,7 @@ export function publicState() {
   const { settings, ...rest } = state;
   return {
     ...rest,
+    counts: wipeCounts(),
     catalog,
     employees: state.employees.map(({ memory, inbox, apiKey, ...e }) => ({
       ...e, queue: inbox.length, hasKey: !!apiKey, keyHint: maskKey(apiKey),
