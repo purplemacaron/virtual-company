@@ -117,7 +117,7 @@ pre.out{white-space:pre-wrap;word-break:break-word;max-height:240px;overflow:aut
 .offside{display:flex;flex-direction:column;gap:16px;position:sticky;top:90px;max-height:calc(100vh - 110px);min-width:0}
 .offside .feed{position:static;max-height:none;flex:1;min-height:0}
 .apprbox{flex:none;max-height:52vh;overflow:auto}
-.appr{border:1px solid #fde68a;border-left:3px solid #b45309;border-radius:10px;padding:12px;margin-bottom:10px;background:#fffbeb;cursor:pointer}
+.appr{border:1px solid #fde68a;border-radius:10px;padding:12px;margin-bottom:10px;background:#fffbeb;cursor:pointer}
 .appr:hover{border-color:#f59e0b}
 .appr:focus-visible{outline:2px solid #111;outline-offset:2px}
 .appr .ti{font-weight:600;font-size:13px;margin-bottom:5px}
@@ -140,11 +140,40 @@ pre.out{white-space:pre-wrap;word-break:break-word;max-height:240px;overflow:aut
 .banner .dl{display:inline-flex;align-items:center;gap:6px;background:#fff;color:#0f172a;border-radius:10px;padding:8px 12px;font-size:13px;font-weight:600;text-decoration:none}
 .banner .ib{background:transparent;border-color:#334155;color:#cbd5e1}
 .banner .ib:hover{border-color:#fff;color:#fff}
-.doc{border:1px solid var(--line);border-radius:12px;padding:14px 16px;background:#fcfcfd}
-.doc .dline{display:flex;gap:10px;font-size:12px;padding:6px 0;border-bottom:1px dashed var(--line)}
-.doc .dline span{color:var(--sub);min-width:74px}
-.doc .dti{font-size:16px;font-weight:700;margin:2px 0 6px}
-.doc .dbody{font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-word;background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px;max-height:220px;overflow:auto}
+/* 결재 서류 · 결과 보고서 — 실제 기안 용지처럼 읽히게: 머릿줄 → 칸표 → 제목 → 본문 줄지 → 결재란 → 인감 */
+.doc{position:relative;border:1px solid #d8d5cf;border-radius:5px;background:#fff;padding:0;overflow:hidden;box-shadow:0 12px 30px rgba(20,20,20,.07)}
+.doc::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:#b45309}
+.doc.stamped::before{background:#a1a1aa}
+.doc.stamped.approved::before,.doc.stamped.done::before{background:#0f766e}
+.doc.stamped.rejected::before{background:#b91c1c}
+.dhead{display:flex;align-items:baseline;gap:10px;padding:13px 16px 11px;border-bottom:1px solid #d8d5cf;background:#faf9f7}
+.dhead b{font-size:13px;letter-spacing:.02em}
+.dhead span{margin-left:auto;font-size:11px;color:var(--sub);font-variant-numeric:tabular-nums;white-space:nowrap}
+.dform{display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid #d8d5cf}
+.dcell{padding:8px 12px;border-right:1px solid #e7e4de;min-width:0}
+.dcell:nth-child(4n),.dcell.wide{border-right:none}
+.dcell.wide{grid-column:1/-1;border-top:1px solid #e7e4de}
+.dcell span{display:block;font-size:10px;color:#9a938a;letter-spacing:.06em;margin-bottom:2px}
+.dcell b{font-size:12.5px;font-weight:600;overflow-wrap:anywhere}
+.dti{margin:15px 16px 0;font-size:18px;font-weight:700;letter-spacing:-.02em;line-height:1.35}
+.dti::after{content:"";display:block;width:44px;height:2px;background:#111;margin-top:8px}
+.dbody{margin:11px 16px 0;padding:11px 13px;font-size:13px;line-height:22px;white-space:pre-wrap;word-break:break-word;
+  border:1px solid #e7e4de;border-radius:3px;max-height:40vh;overflow:auto;
+  background-image:repeating-linear-gradient(to bottom,#fff 0,#fff 21px,#edeae4 21px,#edeae4 22px);background-origin:content-box}
+.dnote{margin:11px 16px 0;border:1px solid #fde68a;background:#fffbeb;border-radius:6px;padding:9px 12px}
+.dnote span{display:block;font-size:10px;letter-spacing:.06em;color:#b45309;margin-bottom:3px}
+.dnote p{font-size:12.5px;line-height:1.6;white-space:pre-wrap;word-break:break-word}
+.dseal{display:grid;grid-template-columns:1fr 1fr;margin-top:15px;border-top:1px solid #d8d5cf}
+.dseal .sl{padding:11px 16px;display:flex;align-items:center;gap:10px;min-width:0;flex-wrap:wrap}
+.dseal .sl span{font-size:10px;color:#9a938a;letter-spacing:.06em;flex:none}
+.dseal .sl b{font-size:12.5px;font-weight:600;overflow-wrap:anywhere}
+.dseal .sl.last{border-left:1px solid #e7e4de;justify-content:flex-end}
+.stamp{font-style:normal;color:#c2410c;border:2px solid #c2410c;border-radius:5px;padding:3px 9px;font-size:13px;font-weight:800;letter-spacing:.14em;transform:rotate(-6deg);opacity:.86;box-shadow:inset 0 0 0 1px rgba(194,65,12,.28)}
+.doc.stamped.approved .stamp,.doc.stamped.done .stamp{color:#0f766e;border-color:#0f766e;box-shadow:inset 0 0 0 1px rgba(15,118,110,.28)}
+.doc.stamped.rejected .stamp{color:#b91c1c;border-color:#b91c1c;box-shadow:inset 0 0 0 1px rgba(185,28,28,.28)}
+.nosig{font-style:normal;font-size:11px;color:#b0aa9f;border:1px dashed #d6d0c6;border-radius:5px;padding:4px 9px;letter-spacing:.06em}
+.sheet.wide{width:min(760px,94vw)}
+.dno{font-size:10px;letter-spacing:.06em;color:#9a938a;font-variant-numeric:tabular-nums}
 .task .ib.go,.task .ib.ok{color:#16a34a}
 .task .ib.stop{color:#d97706}
 .task .sm.err{color:#d33}
@@ -189,4 +218,26 @@ label.pick .ic{flex:none}
 .chhead .membars .csub{margin-left:8px}
 .chact{margin-left:auto;display:flex;gap:6px}
 .chact .ib{width:30px;height:30px}
+
+/* 결과물 상자 · 회사 로고 */
+h3 .ic{display:inline-block;vertical-align:-2px;margin-right:5px}
+.resbox{flex:none;max-height:46vh;overflow:auto}
+.res{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:9px;background:#fff;cursor:pointer;transition:.15s}
+.res:hover{border-color:#cfcfcf;box-shadow:0 8px 22px rgba(0,0,0,.05);transform:translateY(-1px)}
+.res:focus-visible{outline:2px solid #111;outline-offset:2px}
+.res .ti{font-weight:600;font-size:13px;margin:3px 0 5px;overflow-wrap:anywhere}
+.res .who{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--sub);margin-bottom:5px}
+.res .prev{font-size:11.5px;color:#52525b;line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.resfoot{border-top:1px dashed var(--line);padding-top:9px;margin-top:2px;display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--sub);min-width:0}
+.resfoot .ic{flex:none}
+.resfoot a{color:var(--text);text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.resfoot a:hover{text-decoration:underline}
+.badge.grey{background:#71717a}
+.brand img{display:block;height:28px;width:auto;max-width:120px;object-fit:contain}
+.logoprev{width:96px;height:44px;flex:none;display:grid;place-items:center;border:1px dashed var(--line);border-radius:10px;background:#fafafa;overflow:hidden}
+.logoprev.hasimg{border-style:solid;background:#fff}
+.logoprev img{width:100%;height:100%;object-fit:contain;display:block}
+#logoDel{width:32px;height:32px}
+@media (max-width:900px){.office{grid-template-columns:1fr}.offside{position:static;max-height:none}.brand img{height:22px}}
+@media (prefers-reduced-motion:reduce){.res{transition:none}}
 

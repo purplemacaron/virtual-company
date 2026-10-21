@@ -3,7 +3,7 @@ import http from 'http';
 import fs from 'fs';
 import path from 'path';
 import { WebSocketServer } from 'ws';
-import { state, changed, publicState, onEvent, screens, uid, postMessage, leader, flush, cancelTask, decideApproval, safeReportName, reportDir } from './store.js';
+import { state, changed, publicState, onEvent, screens, uid, postMessage, leader, flush, saveNow, cancelTask, decideApproval, safeReportName, reportDir } from './store.js';
 import { startEngine, abortAll, stopTask } from './engine.js';
 import { listModels } from './llm.js';
 import { connectMcp, closeAll, resetBrowser, testSearch, mcpServersObj, writeMcpServers } from './tools.js';
@@ -22,15 +22,15 @@ wss.on('connection', ws => {
 
 const ok = res => res.json({ ok: true });
 const EMP_FIELDS = ['name', 'rank', 'role', 'provider', 'model', 'baseUrl', 'persona', 'color', 'tools', 'avatar'];
-// 사진은 브라우저에서 128px로 줄인 data URL만 받는다 — 임의 텍스트를 data.json에 박아넣는 통로를 막는다
-const AVATAR = /^data:image\/(?:jpeg|png|webp|gif);base64,[A-Za-z0-9+/=]{1,300000}$/;
+// 사진·로고는 브라우저에서 줄인 data URL만 받는다 — 임의 텍스트를 data.json에 박아넣는 통로를 막는다
+const IMAGE = /^data:image\/(?:jpeg|png|webp|gif);base64,[A-Za-z0-9+/=]{1,300000}$/;
 // 마스킹된 값(••••)은 "변경 없음"으로 취급해 클라이언트에 평문 키를 내려보내지 않는다
 const isMasked = v => typeof v === 'string' && v.startsWith('••••');
 const pick = o => {
   const out = Object.fromEntries(EMP_FIELDS.filter(k => o[k] !== undefined).map(k => [k, o[k]]));
   if (out.baseUrl !== undefined) out.baseUrl = String(out.baseUrl).trim();
   if (out.model !== undefined) out.model = String(out.model).trim();
-  if (out.avatar !== undefined) out.avatar = AVATAR.test(String(out.avatar)) ? String(out.avatar) : '';
+  if (out.avatar !== undefined) out.avatar = IMAGE.test(String(out.avatar)) ? String(out.avatar) : '';
   return out;
 };
 // 직원 시트의 팀 체크가 정답이다. 멤버십은 채널에만 저장하고 여기서 맞춘다(전체는 모든 회사 채널).
@@ -49,7 +49,7 @@ const knownMembers = v => Array.isArray(v) ? state.employees.filter(e => v.inclu
 app.get('/api/state', (req, res) => res.json(publicState()));
 
 app.put('/api/settings', (req, res) => {
-  const { keys = {}, clearKeys, search, mcpConfig, userName, companyName, ranks, app: appCfg } = req.body;
+  const { keys = {}, clearKeys, search, mcpConfig, userName, companyName, logo, ranks, app: appCfg } = req.body;
   for (const [k, v] of Object.entries(keys))
     if (typeof v === 'string' && v.trim() && !isMasked(v)) state.settings.keys[k] = v.trim();
   // 마스킹이라 평문을 되돌려 줄 수 없어, 지우는 건 명시 요청으로만 받는다
@@ -63,6 +63,8 @@ app.put('/api/settings', (req, res) => {
   }
   if (userName) state.user.name = userName;
   if (companyName) state.company.name = companyName;
+  // 로고는 브라우저가 줄인 data URL만 받는다. '' 은 삭제 요청이며, 이미지는 마스킹 대상이 아니라 그대로 비교할 수 있다.
+  if (typeof logo === 'string') state.company.logo = logo && IMAGE.test(logo) ? logo : '';
   if (Array.isArray(ranks) && ranks.length) state.ranks = ranks;
   if (appCfg && typeof appCfg === 'object') {
     const a = state.settings.app, wasHeadless = a.headless;
@@ -74,7 +76,7 @@ app.put('/api/settings', (req, res) => {
   }
   const mcpChanged = typeof mcpConfig === 'string' && mcpConfig !== state.settings.mcpConfig;
   if (typeof mcpConfig === 'string') state.settings.mcpConfig = mcpConfig;
-  changed(); ok(res);
+  changed(); saveNow(); ok(res);
   if (mcpChanged) connectMcp();
 });
 app.post('/api/mcp/reconnect', async (req, res) => { await connectMcp(); ok(res); });
@@ -93,6 +95,7 @@ async function saveServers(mutate, res) {
   catch (e) { return res.status(400).json({ error: '입력 형식 오류: ' + e.message }); }
   if (draft?.error) return res.status(draft.status || 400).json({ error: draft.error });
   writeMcpServers(draft);
+  saveNow();                       // 서버 등록/삭제 자체를 잃으면 직원 권한 목록까지 함께 사라진다
   await connectMcp();
   res.json({ ok: true, status: state.mcpStatus });
 }
@@ -144,7 +147,7 @@ app.post('/api/mcp/grant', (req, res) => {
     if (!arr.includes(name)) arr.push(name);
     e.tools.mcp = arr;
   });
-  changed(); ok(res);
+  changed(); saveNow(); ok(res);
 });
 
 app.post('/api/search/test', async (req, res) => {
@@ -169,7 +172,7 @@ app.post('/api/models', async (req, res) => {
 app.put('/api/company', (req, res) => {
   if (typeof req.body.goal === 'string') state.company.goal = req.body.goal;
   if (req.body.name) state.company.name = req.body.name;
-  changed(); ok(res);
+  changed(); saveNow(); ok(res);
 });
 app.post('/api/company/start', (req, res) => {
   state.company.running = true;
@@ -186,7 +189,7 @@ app.post('/api/company/start', (req, res) => {
     L.inbox.push({ from: 'system', channel: null,
       text: `회사가 가동되었습니다. 회사 목표: "${state.company.goal}"\n대표로서 목표 달성 계획을 세우고, 팀원의 직무·모델 특성을 고려해 assign_task로 업무를 배분하세요. 계획은 send_message로 "전체" 채널에 공유하세요.` });
   }
-  changed(); ok(res);
+  changed(); saveNow(); ok(res);
 });
 app.post('/api/company/pause', (req, res) => {
   state.company.running = false;
@@ -199,7 +202,7 @@ app.post('/api/company/pause', (req, res) => {
   });
   // 오너가 보낸 메시지(지시·취소·결재 결과)는 대기열에 남겨 다음 가동 때 읽고, 직원 간 잡담은 버린다.
   state.employees.forEach(e => { e.inbox = e.inbox.filter(m => m.from === 'user'); });
-  changed(); ok(res);
+  changed(); saveNow(); ok(res);
 });
 
 app.post('/api/employees', (req, res) => {
@@ -208,7 +211,7 @@ app.post('/api/employees', (req, res) => {
   if (typeof req.body.apiKey === 'string' && !isMasked(req.body.apiKey)) e.apiKey = req.body.apiKey.trim();
   state.employees.push(e);
   syncTeams(e, req.body.teams);
-  changed(); res.json(publicState().employees.find(x => x.id === e.id));
+  changed(); saveNow(); res.json(publicState().employees.find(x => x.id === e.id));
 });
 app.put('/api/employees/:id', (req, res) => {
   const e = state.employees.find(x => x.id === req.params.id);
@@ -216,12 +219,12 @@ app.put('/api/employees/:id', (req, res) => {
   Object.assign(e, pick(req.body));
   if (typeof req.body.apiKey === 'string' && !isMasked(req.body.apiKey)) e.apiKey = req.body.apiKey.trim();
   syncTeams(e, req.body.teams);
-  changed(); ok(res);
+  changed(); saveNow(); ok(res);
 });
 app.delete('/api/employees/:id', (req, res) => {
   state.employees = state.employees.filter(x => x.id !== req.params.id);
   state.channels.forEach(c => { c.members = (c.members || []).filter(id => id !== req.params.id); });
-  changed(); ok(res);
+  changed(); saveNow(); ok(res);
 });
 app.post('/api/employees/:id/reset', (req, res) => {
   const e = state.employees.find(x => x.id === req.params.id);
@@ -246,7 +249,7 @@ app.put('/api/tasks/:id', (req, res) => {
     if (next === 'paused') t.error = '오너가 멈춤';
     if (next === 'done') { t.doneAt = Date.now(); t.result = t.result || '오너가 직접 완료 처리했습니다'; }
   }
-  changed(); ok(res);
+  changed(); saveNow(); ok(res);
 });
 app.delete('/api/tasks/:id', (req, res) => {
   const t = state.tasks.find(x => x.id === req.params.id);
@@ -290,13 +293,13 @@ app.put('/api/channels/:id', (req, res) => {
   c.name = name;
   // "전체"는 전원 고정 — 멤버를 걸면 팀 채널이 아니게 된다
   if (Array.isArray(req.body.members) && c.id !== 'general') c.members = knownMembers(req.body.members);
-  changed(); ok(res);
+  changed(); saveNow(); ok(res);
 });
 app.delete('/api/channels/:id', (req, res) => {
   state.channels = state.channels.filter(x => x.id !== req.params.id);
   state.messages = state.messages.filter(m => m.channel !== req.params.id);
   if (req.params.id === 'general') state.channels.unshift({ id: 'general', name: '전체', members: [] });
-  changed(); ok(res);
+  changed(); saveNow(); ok(res);
 });
 app.delete('/api/logs', (req, res) => { state.logs = []; changed(); ok(res); });
 

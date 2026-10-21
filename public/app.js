@@ -32,6 +32,8 @@ const nm = id => id === 'user' ? S.user.name : id === 'system' ? '시스템' : (
 const col = id => id === 'user' ? '#111' : (emp(id)?.color || '#999');
 const dm = (a, b) => 'dm:' + [a, b].sort().join(':');
 const time = ts => new Date(ts).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+const dt = ts => new Date(ts).toLocaleString('ko-KR', { hour12: false });
+const dnum = ts => { const d = new Date(ts), p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}.${p(d.getMonth() + 1)}.${p(d.getDate())}`; };
 const MODEL = m => String(m).replace(/^claude-/, 'Claude ').replace(/-\d{8}$/, '').replace(/^gpt-/, 'GPT-').replace(/^gemini-/, 'Gemini ')
   .replace(/-(\d)-(\d)/, ' $1.$2').replace(/-/g, ' ').replace(/\b(opus|sonnet|haiku|flash|pro|mini)\b/g, w => w[0].toUpperCase() + w.slice(1));
 const provs = () => S.catalog?.providers || {};
@@ -62,7 +64,7 @@ const ICONS = {
   tasks: '<rect x="5" y="5" width="14" height="16" rx="2"/><path d="M9 5V3.5h6V5"/><path d="M8.5 13.2l2.2 2.2 4.4-4.6"/>',
   chat: '<path d="M20 11.8a7.6 7.6 0 0 1-11 6.8L5 19.5l1-3.6A7.6 7.6 0 1 1 20 11.8Z"/>',
   org: '<circle cx="9.2" cy="8" r="3.2"/><path d="M3.6 20c0-3.3 2.5-5.7 5.6-5.7s5.6 2.4 5.6 5.7"/><path d="M16.2 5.3a3.3 3.3 0 0 1 0 5.4M17.8 15c2 .8 3.4 2.8 3.4 5"/>',
-  settings: '<circle cx="12" cy="12" r="3.1"/><path d="M12 2.9v2.6M12 18.5v2.6M4.6 7.7l2.2 1.3M17.2 15l2.2 1.3M4.6 16.3l2.2-1.3M17.2 9l2.2-1.3"/>',
+  settings: '<circle cx="8.8" cy="8.8" r="3.7"/><path d="M11.5 11.5 20 20"/><path d="M15.3 15.3l1.8-1.8M17.6 17.6l1.7-1.7"/>',
   play: '<path d="M8 5.4v13.2L19 12Z"/>',
   pause: '<path d="M9.4 5.4v13.2M14.6 5.4v13.2"/>',
   send: '<path d="M4 12 20 4.4l-4.4 15.2-3.6-6.3Z"/><path d="M11.8 13.4 20 4.4"/>',
@@ -84,6 +86,8 @@ const ICONS = {
   check: '<path d="M5 12.6l4.4 4.4L19 7.4"/>',
   doc: '<path d="M14 3.6H7.6A1.6 1.6 0 0 0 6 5.2v13.6a1.6 1.6 0 0 0 1.6 1.6h8.8a1.6 1.6 0 0 0 1.6-1.6V8.4Z"/><path d="M14 3.6v4.8h4.8"/><path d="M8.8 13h6.4M8.8 16.4h4.4"/>',
   bell: '<path d="M7.6 10.2a4.4 4.4 0 0 1 8.8 0c0 3.9 1.6 5.4 1.6 5.4H6s1.6-1.5 1.6-5.4Z"/><path d="M10.4 18.6a1.8 1.8 0 0 0 3.2 0"/>',
+  box: '<path d="M3.6 7.8 12 4.2l8.4 3.6v8.4L12 19.8l-8.4-3.6Z"/><path d="M3.6 7.8 12 11.4l8.4-3.6"/><path d="M12 11.4v8.4"/>',
+  copy: '<rect x="8.6" y="8.6" width="11.4" height="11.4" rx="2"/><path d="M15.8 5.6H6.4a2 2 0 0 0-2 2v9.4"/>',
 };
 const ico = (n, s = 18) => `<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n] || ''}</svg>`;
 // 글자 대신 아이콘 버튼. 한국어 이름은 title(툴팁)과 aria-label(스크린리더)로 그대로 남긴다.
@@ -118,6 +122,35 @@ async function shrinkAvatar(file) {
   return out;
 }
 
+// 로고는 비율을 유지해 280x120 안에 담는다. PNG는 투명 배경을 살린다.
+const LOGO_W = 280, LOGO_H = 120;
+async function shrinkLogo(file) {
+  const bmp = await createImageBitmap(file);
+  const k = Math.min(LOGO_W / bmp.width, LOGO_H / bmp.height, 1);
+  const cv = document.createElement('canvas');
+  cv.width = Math.max(1, Math.round(bmp.width * k));
+  cv.height = Math.max(1, Math.round(bmp.height * k));
+  cv.getContext('2d').drawImage(bmp, 0, 0, cv.width, cv.height);
+  bmp.close?.();
+  const png = cv.toDataURL('image/png');
+  const out = png.length > 300000 ? (() => {                 // 투명함이 필요 없는 큰 로고는 JPEG로 한 번 더 줄인다
+    const c2 = document.createElement('canvas'); c2.width = cv.width; c2.height = cv.height;
+    const x = c2.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c2.width, c2.height); x.drawImage(cv, 0, 0);
+    return c2.toDataURL('image/jpeg', 0.85);
+  })() : png;
+  if (out.length > 300000) throw new Error('압축해도 너무 큰 이미지입니다');
+  return out;
+}
+
+// 설정 탭의 로고 칸 — 아직 저장하지 않은 logoDraft 를 미리 보여준다.
+function paintLogoPrev() {
+  const p = $('#logoPrev'); if (!p) return;
+  p.innerHTML = logoDraft ? `<img src="${logoDraft}" alt="현재 로고">` : '';
+  p.classList.toggle('hasimg', !!logoDraft);
+  const del = $('#logoDel'); if (del) del.disabled = !logoDraft;
+  const lb = $('#logoPickTxt'); if (lb) lb.textContent = logoDraft ? '로고 교체' : '로고 선택';
+}
+
 // ---------- WebSocket ----------
 function connect() {
   const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
@@ -133,6 +166,12 @@ function connect() {
 connect();
 
 function header() {
+  const logo = S.company.logo || '';
+  const img = $('#brandLogo');
+  if (img) {
+    img.hidden = !logo;
+    if (logo && img.getAttribute('src') !== logo) img.src = logo;   // src 속성에만 대입 → 마크업으로 새어가지 않는다
+  }
   $('#brandName').textContent = S.company.name;
   if (document.activeElement !== $('#goal')) $('#goal').value = S.company.goal;
   const b = $('#runBtn');
@@ -175,10 +214,12 @@ $('#tabs').innerHTML = [['office', '오피스'], ['tasks', '업무'], ['chat', '
   .map(([id, label]) => `<button data-tab="${id}"${id === tab ? ' class="on"' : ''} title="${label}" aria-label="${label}">${ico(id, 19)}</button>`).join('');
 
 // ---------- 화면 ----------
+let logoDraft = '', logoSaved = null;               // 설정 탭에서 아직 저장하지 않은 로고 미리보기 / 서버에 있다고 아는 값
 const shells = {
   office: () => `<div class="office"><div class="floor" id="desks"></div><aside class="offside">
     <div id="banner"></div>
     <div class="card apprbox" id="apprBox"></div>
+    <div class="card resbox" id="resBox"></div>
     <div class="card feed"><h3>실시간 활동</h3><div id="feed"></div></aside></aside></div>`,
   tasks: () => `<form class="taskform" id="tf"><input name="title" placeholder="업무 제목" required><input name="description" placeholder="상세 내용 / 기대 산출물"><select name="assigneeId" id="asg"></select><button class="ib primary" type="submit" title="업무 지시" aria-label="업무 지시">${ico('plus')}</button></form><div class="board" id="board"></div>`,
   chat: () => `<div class="chat"><aside class="chans" id="chans"></aside><section class="room"><div class="chhead" id="chhead"></div><div class="msgs" id="msgs"></div><form class="send" id="send"><input id="msgIn" placeholder="메시지 입력 · @이름 으로 직원 호출" autocomplete="off"><button class="ib primary" type="submit" title="전송" aria-label="전송">${ico('send')}</button></form></section></div>`,
@@ -201,6 +242,11 @@ const shells = {
       return ids.length ? `<label class="grp">${esc(gl)}</label>${ids.map(id => keyLine(id, providers[id].label, providers[id].keyOptional ? '키 불필요 (입력하면 사용)' : '키 입력')).join('')}` : '';
     }).join('')}
     <label>회사 이름</label><input id="cname" value="${esc(S.company.name)}"><label>내 이름</label><input id="uname" value="${esc(S.user.name)}">
+    <label>회사 로고 (좌측 상단 회사 이름 앞에 표시)</label>
+    <div class="avrow"><span class="logoprev" id="logoPrev"></span>
+      <label class="pick">${ico('camera')}<span id="logoPickTxt">로고 선택</span><input type="file" id="f_logo" accept="image/png,image/jpeg,image/webp,image/gif" hidden></label>
+      ${ib('로고 제거', 'trash', 'danger', 'id="logoDel"')}</div>
+    <div class="status">PNG는 투명 배경을 살립니다. ${LOGO_W}x${LOGO_H} 안에 맞게 줄여서만 저장하므로 data.json이 불어날지 않습니다.</div>
     <div class="btns">${ib('전역 설정 저장', 'save', 'primary', 'id="saveSet"')}</div></div>
     <div class="colstack"><div class="card"><h3>웹 검색 엔진</h3>
     <div class="status">자동 모드는 아래에서 사용 가능한 엔진만 ${searchOrder.join(' → ')} 순서로 시도합니다. 직원 업무 중에도 web_search의 engine 인자로 엔진을 고를 수 있습니다.</div>
@@ -240,6 +286,28 @@ const shells = {
   },
 };
 
+// ---------- 회사 서류 양식 ----------
+// 결재 서류와 결과물은 같은 회사의 종이 한 종류다 — 생김새를 하나의 양식으로 통일한다.
+function docForm(o) {
+  return `<div class="doc${o.stamp ? ' stamped ' + (o.stampKind || '') : ''}">
+    <div class="dhead"><b>${esc(o.org)}</b><span>${esc(o.kind)} · ${esc(o.no)}</span></div>
+    <div class="dform">
+      <div class="dcell"><span>기안</span><b>${esc(o.from)}</b></div>
+      <div class="dcell"><span>수신</span><b>${esc(o.to)}</b></div>
+      <div class="dcell"><span>상신일</span><b>${esc(o.when)}</b></div>
+      <div class="dcell"><span>상태</span><b>${esc(o.state)}</b></div>
+      ${o.ref ? `<div class="dcell wide"><span>관련 업무</span><b>${esc(o.ref)}</b></div>` : ''}
+    </div>
+    <h4 class="dti">${esc(o.title)}</h4>
+    <div class="dbody">${esc(o.body)}</div>
+    ${o.note ? `<div class="dnote"><span>오너 메모</span><p>${esc(o.note)}</p></div>` : ''}
+    <div class="dseal">
+      <div class="sl"><span>기안자</span><b>${esc(o.fromShort)}</b></div>
+      <div class="sl last"><span>결재자</span><b>${esc(o.toShort)}</b>${o.stamp ? `<i class="stamp">${esc(o.stamp)}</i>` : '<i class="nosig">인감 미날인</i>'}</div>
+    </div>
+  </div>`;
+}
+
 // ---------- 작업 종료 배너 · 결재함 ----------
 // 일이 모두 끝났을 때 아래 창에 "작업 종료"와 보고서 파일을 남긴다. 숨기면 그 종료 건은 다시 안 보인다.
 function renderBanner() {
@@ -257,14 +325,53 @@ function renderAppr() {
   const pend = S.approvals.filter(a => a.status === 'pending');
   const past = S.approvals.filter(a => a.status !== 'pending').slice(-4).reverse();
   const st = { approved: '승인', rejected: '반려', expired: '만료' };
-  el.innerHTML = `<h3>결재함${pend.length ? `<span class="badge">${pend.length}</span>` : ''}</h3>
+  el.innerHTML = `<h3>${ico('doc', 14)}결재함${pend.length ? `<span class="badge">${pend.length}</span>` : ''}</h3>
     ${pend.map(a => `<div class="appr" data-apprs="${a.id}" tabindex="0" role="button" title="결재 서류 열기">
+      <div class="dno">결재 ${esc(a.id.toUpperCase())} · ${dnum(a.createdAt)} ${time(a.createdAt)}</div>
       <div class="ti">${esc(a.title)}</div>
-      <div class="who">${av(a.empId, 'width:22px;height:22px')}<span>${esc(nm(a.empId))} · ${a.taskId ? '#' + esc(a.taskId) : '업무 없음'} · ${time(a.createdAt)}</span></div>
+      <div class="who">${av(a.empId, 'width:22px;height:22px')}<span>${esc(nm(a.empId))} · ${a.taskId ? '#' + esc(a.taskId) : '업무 없음'}</span></div>
       <div class="det">${esc(a.detail)}</div>
       <div class="btns">${ib('반려', 'close', 'x danger', `data-no="${a.id}"`)}${ib('결재 서류에 서명', 'pencil', '', `data-apprs="${a.id}"`)}${ib('승인', 'check', 'primary', `data-yes="${a.id}"`)}</div></div>`).join('')
       || '<div class="status">올라온 결재가 없습니다. 직원이 되돌릴 수 없는 행동을 하려 하면 여기에 서류가 뜹니다.</div>'}
-    ${past.length ? `<div class="hist">${past.map(a => `<span class="chip ${a.status}">${st[a.status] || a.status} · ${esc(a.title)}</span>`).join('')}</div>` : ''}`;
+    ${past.length ? `<div class="hist">${past.map(a => `<button type="button" class="chip ${a.status}" data-apprs="${a.id}" title="${st[a.status] || a.status} · ${esc(a.title)} · 서류 다시 보기">${st[a.status] || a.status} · ${esc(a.title)}</button>`).join('')}</div>` : ''}`;
+}
+
+// ---------- 결과물 상자 ----------
+// 끝난 업무의 결과를 한 곳에 쌓아 둔다. 카드를 누르면 회사 양식(서류)으로 열어 본다.
+function renderRes() {
+  const el = $('#resBox'); if (!el) return;
+  const list = S.tasks.filter(t => t.status === 'done').reverse();
+  el.innerHTML = `<h3>${ico('box', 14)}결과물${list.length ? `<span class="badge grey">${list.length}</span>` : ''}</h3>
+    ${list.map(t => `<div class="res" data-res="${t.id}" tabindex="0" role="button" title="결과물 열기 · ${esc(t.title)}">
+      <div class="dno">결과 ${esc(t.id.toUpperCase())} · ${t.doneAt ? dnum(t.doneAt) + ' ' + time(t.doneAt) : '완료'}</div>
+      <div class="ti">${esc(t.title)}</div>
+      <div class="who">${av(t.assigneeId, 'width:20px;height:20px')}<span>${esc(nm(t.assigneeId))}${t.description ? ` · ${esc(t.description.slice(0, 40))}` : ''}</span></div>
+      <div class="prev">${esc(String(t.result || '(결과 텍스트 없음)').slice(0, 90))}</div></div>`).join('')
+      || '<div class="status">아직 담긴 결과물이 없습니다. 업무가 끝나면 결과 보고서가 이 상자 안에 쌓입니다.</div>'}
+    ${S.lastRun ? `<div class="resfoot">${ico('doc', 14)}<a href="/api/report/${esc(S.lastRun.file)}" download title="작업 종료 보고서 다운로드">최종 보고서 ${esc(S.lastRun.file)}</a></div>` : ''}`;
+}
+function showResult(id) {
+  const t = S.tasks.find(x => x.id === id);
+  if (!t) { toast('업무 기록이 없습니다', 'err'); return; }
+  const sheet = $('#sheet');
+  sheet.classList.add('wide');
+  sheet.innerHTML = `<h3>결과물 · 업무 #${esc(t.id)}</h3>
+    ${docForm({
+      org: S.company.name, kind: '결과 보고', no: t.id.toUpperCase(),
+      from: `${nm(t.assigneeId)} (${emp(t.assigneeId)?.rank || '직원'})`, to: `${S.user.name} (오너)`,
+      when: t.doneAt ? dt(t.doneAt) : '완료 시각 없음', state: '완료',
+      ref: `${t.title}${t.description ? ` · ${t.description}` : ''}`,
+      title: t.title, body: t.result || '(결과 텍스트가 없습니다. 직원이 결과를 남기지 않고 완료만 처리했습니다.)',
+      fromShort: nm(t.assigneeId), toShort: S.user.name, stamp: '확인', stampKind: 'done',
+    })}
+    <div class="btns"><button type="button" class="lbl" id="r_copy" title="결과 텍스트 복사">${ico('copy', 15)}결과 복사</button>
+      <button type="button" class="primary lbl" id="r_close" title="닫기">${ico('close', 15)}닫기</button></div>`;
+  $('#modal').classList.remove('hidden');
+  $('#r_copy').onclick = async () => {
+    try { await navigator.clipboard.writeText(t.result || ''); toast('결과를 복사했습니다'); }
+    catch { toast('복사 권한이 없어 결과를 아래처럼 직접 골라 주세요', 'err'); }
+  };
+  $('#r_close').onclick = () => $('#modal').classList.add('hidden');
 }
 function notify(title, body) {
   if (!('Notification' in window) || Notification.permission !== 'granted') return;
@@ -295,7 +402,7 @@ const updaters = {
         ${toolChips(e)}</div></div>`;
     }).join('');
     $('#feed').innerHTML = S.logs.slice(-100).reverse().map(l => `<div class="log ${l.kind}"><span class="t">${time(l.ts)}</span><span class="who" style="color:${col(l.empId)}">${esc(nm(l.empId))}</span>${esc(l.text)}</div>`).join('') || '<div class="status">아직 활동이 없습니다</div>';
-    renderBanner(); renderAppr();
+    renderBanner(); renderAppr(); renderRes();
   },
   tasks() {
     const a = $('#asg'), v = a.value;
@@ -390,6 +497,19 @@ const updaters = {
       ${ib(`${n} 서버를 전 직원에 허용`, 'userplus', 'x', `data-mcpgrant="${esc(n)}"`)}
       ${ib(`${n} 서버 삭제`, 'trash', 'x danger', `data-mcpdel="${esc(n)}"`)}</div>`).join('')
       : '<div class="status">등록된 MCP 서버가 없습니다. 위의 프리셋을 고르고 추가하세요.</div>';
+    // 서버의 로고가 우리가 알던 값과 달라졌으면(방금 저장했거나 다른 창에서 바꿨거나) 미리보기를 맞춘다.
+    // 아직 저장하지 않은 선택은 logoDraft 에만 있으니 이 재동기가 지우지 않는다.
+    const saved = S.company.logo || '';
+    if (logoSaved !== saved) { logoSaved = saved; logoDraft = saved; }
+    paintLogoPrev();
+    $('#f_logo').onchange = async ev => {
+      const file = ev.target.files?.[0]; if (!file) return;
+      try { logoDraft = await shrinkLogo(file); }
+      catch (err) { toast(`${file.name}을(를) 로고로 바꿀 수 없습니다: ${err.message}`, 'err'); return; }
+      ev.target.value = '';                          // 같은 파일을 다시 골라도 change 가 다시 걸린다
+      paintLogoPrev();
+      toast(`${file.name} 로고 준비 완료 · "전역 설정 저장"을 누르면 좌측 상단에 붙습니다`);
+    };
   },
 };
 
@@ -399,10 +519,11 @@ function update() { updaters[tab]?.(); }
 // ---------- 이벤트 ----------
 document.addEventListener('click', async e => {
   if (!$('#modal').classList.contains('hidden')) return;
-  const t = e.target.closest('[data-id],[data-ch],[data-del],[data-done],[data-pause],[data-resume],[data-yes],[data-no],[data-apprs],[data-edit],[data-chedit],[data-chdel],[data-team],[data-teamdel],[data-clearkey],[data-mcpdel],[data-mcpgrant],#newCh,#addEmp,#addTeam,#saveRanks,#saveSet,#saveCfg,#saveSearch,#searchTest,#mcpAdd,#clearLogs,#saveMcp,#recon,#banHide');
+  const t = e.target.closest('[data-id],[data-ch],[data-del],[data-done],[data-pause],[data-resume],[data-yes],[data-no],[data-apprs],[data-res],[data-edit],[data-chedit],[data-chdel],[data-team],[data-teamdel],[data-clearkey],[data-mcpdel],[data-mcpgrant],#newCh,#addEmp,#addTeam,#saveRanks,#saveSet,#saveCfg,#saveSearch,#searchTest,#mcpAdd,#clearLogs,#saveMcp,#recon,#banHide,#logoDel');
   if (!t) return;
   if (t.dataset.id && tab === 'office') { chan = dm('user', t.dataset.id); $('#tabs [data-tab=chat]').click(); }
   else if (t.dataset.ch) { chan = t.dataset.ch; update(); }
+  else if (t.dataset.res) showResult(t.dataset.res);
   else if (t.dataset.del) { if (confirm('업무를 삭제할까요? 삭제한 일은 다시 지시되지 않습니다.')) api('DELETE', '/api/tasks/' + t.dataset.del); }
   else if (t.dataset.done) { await api('PUT', '/api/tasks/' + t.dataset.done, { status: 'done' }); toast('완료 처리했습니다 · 남은 업무가 없으면 작업 종료 보고서가 올라옵니다'); }
   else if (t.dataset.pause) { await api('PUT', '/api/tasks/' + t.dataset.pause, { status: 'paused' }); toast('이 업무를 멈췄습니다 · 멈춤·실패 칸에서 ▶로 다시 시작할 수 있어요'); }
@@ -432,12 +553,13 @@ document.addEventListener('click', async e => {
     toast(`운영 설정 저장 완료 · PC 조작 ${pcOn ? '허용' : '차단'}\n헤드리스 브라우저 설정은 다음 브라우저 사용부터 반영됩니다.`); build();
   }
   else if (t.id === 'clearLogs') api('DELETE', '/api/logs');
+  else if (t.id === 'logoDel') { logoDraft = ''; paintLogoPrev(); toast('로고를 지웠습니다 · 아래 "전역 설정 저장"을 눌러야 실제로 사라집니다'); }
   else if (t.id === 'saveSet') {
     const keys = {}; document.querySelectorAll('[data-key]').forEach(i => { if (i.value) { keys[i.dataset.key] = i.value; i.value = ''; } });
     const n = Object.keys(keys).length;
-    await api('PUT', '/api/settings', { keys, companyName: $('#cname').value, userName: $('#uname').value });
+    await api('PUT', '/api/settings', { keys, companyName: $('#cname').value, userName: $('#uname').value, logo: logoDraft });
     toast(n ? `전역 설정 저장 완료 · 키 ${n}개 갱신 (뒷부분 ${Object.values(keys).map(mask).join(' / ')}\n아래 칸에 •••• 표시로 남습니다)`
-      : '회사 이름·내 이름 저장 완료 · 새로 입력된 키는 없습니다');
+      : `회사 이름·내 이름·로고 저장 완료 · 새로 입력된 키는 없습니다`);
     build();
   }
   else if (t.dataset.clearkey) {
@@ -488,6 +610,16 @@ document.addEventListener('click', async e => {
   else if (t.id === 'recon') { await api('POST', '/api/mcp/reconnect'); toast('MCP 재연결을 시도했습니다'); }
 });
 
+// 결재·결과물 카드는 role="button" 이므로 마우스 없이 Enter/Space 로도 열린다
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  if (!$('#modal').classList.contains('hidden')) return;
+  const t = e.target.closest?.('[data-apprs],[data-res]');
+  if (!t) return;
+  e.preventDefault();
+  t.dataset.apprs ? showApproval(t.dataset.apprs) : showResult(t.dataset.res);
+});
+
 // 프리셋을 고르면 폼이 채워지고, 서버 활성 토글은 즉시 재연결로 이어진다
 document.addEventListener('change', async e => {
   const t = e.target;
@@ -521,6 +653,7 @@ function editEmp(e) {
   const mcpOn = t.mcp === 'all' || (Array.isArray(t.mcp) && t.mcp.length > 0);
   const srvs = mcpServers();
   const allSel = t.mcp === 'all' || (Array.isArray(t.mcp) && srvs.length > 0 && srvs.every(s => t.mcp.includes(s)));
+  $('#sheet').classList.remove('wide');
   $('#sheet').innerHTML = `<h3>${e ? '직원 편집 · ' + esc(x.name) : '직원 채용'}</h3>
     <label>이름</label><input id="f_name" value="${esc(x.name)}">
     <label>직급</label><select id="f_rank">${S.ranks.map(r => `<option ${r === x.rank ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select>
@@ -637,8 +770,12 @@ function editEmp(e) {
     document.querySelectorAll('[data-tool]').forEach(c => body.tools[c.dataset.tool] = c.checked);
     body.avatar = avatar;
     body.teams = [...document.querySelectorAll('[data-teamcb]')].filter(c => c.checked).map(c => c.dataset.teamcb);
-    const grant = !body.tools.mcp ? [] : (!$('#mcpAll') || $('#mcpAll').checked) ? 'all'
-      : [...document.querySelectorAll('[data-mcp]')].filter(c => c.checked).map(c => c.dataset.mcp);
+    // 서버 목록이 비어 있으면 체크박스가 렌더되지 않는다. 그때 'all'을 새로 만들면
+    // 목록으로 좁혀 둔 권한이 서버를 지울 때마다 전체 허용으로 넓어진다 — 지금 값을 보존한다.
+    const all = $('#mcpAll');
+    const grant = !body.tools.mcp ? [] : all ? (all.checked ? 'all'
+      : [...document.querySelectorAll('[data-mcp]')].filter(c => c.checked).map(c => c.dataset.mcp))
+      : (t.mcp === undefined ? 'all' : t.mcp);
     body.tools.mcp = grant;
     if (!body.name || !body.model) { toast('이름과 모델 ID는 반드시 채워야 합니다', 'err'); return; }
     if (clearBox?.checked) body.apiKey = '';
@@ -682,6 +819,7 @@ $('#modal').onclick = e => { if (e.target.id === 'modal') $('#modal').classList.
 // ---------- 팀 · 채널 편집 ----------
 function editTeam(c) {
   const x = c || { name: '', members: [] };
+  $('#sheet').classList.remove('wide');
   $('#sheet').innerHTML = `<h3>${c ? '팀 편집 · ' + esc(x.name) : '팀 만들기'}</h3>
     <label>팀 이름</label><input id="t_name" value="${esc(x.name)}" placeholder="예: 리서치팀">
     <label>멤버</label>
@@ -727,25 +865,32 @@ function showApproval(id) {
   const a = S.approvals.find(x => x.id === id);
   if (!a) { toast('이미 처리된 결재입니다', 'err'); return; }
   const t = S.tasks.find(x => x.id === a.taskId);
-  $('#sheet').innerHTML = `<h3>결재 서류 · 대기</h3>
-    <div class="doc">
-      <div class="dline"><span>상신자</span><b>${esc(nm(a.empId))} (${esc(emp(a.empId)?.rank || '')})</b></div>
-      <div class="dline"><span>상신 시각</span><b>${new Date(a.createdAt).toLocaleString('ko-KR', { hour12: false })}</b></div>
-      <div class="dline"><span>관련 업무</span><b>${t ? `#${esc(t.id)} ${esc(t.title)}` : '없음'}</b></div>
-      <label>결재 제목</label><div class="dti">${esc(a.title)}</div>
-      <label>내용</label><div class="dbody">${esc(a.detail)}</div>
-      <label>오너 메모 · 조건</label><textarea id="a_note" rows="3" placeholder="예: 금액 다시 확인 후 집행 / 이번 주에는 보류"></textarea>
-      <div class="status">승인하면 담당 직원이 그대로 진행하고, 반려하면 그 행동은 하지 않고 대안으로 보고합니다.</div>
-    </div>
-    <div class="btns"><button type="button" class="danger lbl" id="a_no" title="반려">${ico('close', 15)}반려</button>
-      <button type="button" class="primary lbl" id="a_yes" title="승인">${ico('check', 15)}승인</button>
+  const open = a.status === 'pending';
+  const st = { approved: '결재', rejected: '반려', expired: '만료' }[a.status] || '대기';
+  $('#sheet').classList.add('wide');
+  $('#sheet').innerHTML = `<h3>결재 서류 · ${open ? '서명 대기' : st + ' 완료'}</h3>
+    ${docForm({
+      org: S.company.name, kind: '품의', no: a.id.toUpperCase(),
+      from: `${nm(a.empId)} (${emp(a.empId)?.rank || '직원'})`, to: `${S.user.name} (오너)`,
+      when: dt(a.createdAt), state: open ? '결재 대기' : `${st}${a.decidedAt ? ' · ' + time(a.decidedAt) : ''}`,
+      ref: t ? `#${t.id} ${t.title}` : '없음',
+      title: a.title, body: a.detail, note: a.note,
+      fromShort: nm(a.empId), toShort: S.user.name,
+      stamp: open ? '' : st, stampKind: a.status,
+    })}
+    ${open ? '<label>오너 메모 · 조건 (승인/반려 결과에 함께 기록됩니다)</label><textarea id="a_note" rows="3" placeholder="예: 금액 다시 확인 후 집행 / 이번 주에는 보류"></textarea>' : ''}
+    <div class="status">${open ? '승인하면 담당 직원이 그대로 진행하고, 반려하면 그 행동은 하지 않고 대안으로 보고합니다.'
+      : '이미 서명이 끝난 서류입니다. 결재함 아래의 기록을 누르면 언제든 다시 열어 볼 수 있습니다.'}</div>
+    <div class="btns">${open ? `<button type="button" class="danger lbl" id="a_no" title="반려">${ico('close', 15)}반려</button>
+      <button type="button" class="primary lbl" id="a_yes" title="승인">${ico('check', 15)}승인</button>` : ''}
       ${ib('닫기', 'close', '', 'id="a_close"')}</div>`;
   $('#modal').classList.remove('hidden');
-  const note = () => $('#a_note').value.trim();
-  $('#a_yes').onclick = () => sign(a.id, true, note());
-  $('#a_no').onclick = () => sign(a.id, false, note());
+  const note = () => $('#a_note')?.value.trim() || '';
+  // 이미 서명된 서류를 기록에서 다시 열 때는 서명 버튼이 렌더되지 않는다 — null 에 붙지 않게 한다.
+  $('#a_yes')?.addEventListener('click', () => sign(a.id, true, note()));
+  $('#a_no')?.addEventListener('click', () => sign(a.id, false, note()));
   $('#a_close').onclick = () => $('#modal').classList.add('hidden');
   $('#sheet').onkeydown = ev => {
-    if (ev.key === 'Enter' && ev.target.tagName === 'INPUT') { ev.preventDefault(); $('#a_yes').click(); }
+    if (ev.key === 'Enter' && ev.target.tagName === 'INPUT' && open) { ev.preventDefault(); $('#a_yes').click(); }
   };
 }

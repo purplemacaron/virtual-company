@@ -6,8 +6,15 @@ import { PROVIDERS, SEARCH_ENGINES, SEARCH_ORDER, MCP_PRESETS, PROVIDER_GROUPS }
 export const catalog = { providers: PROVIDERS, providerGroups: PROVIDER_GROUPS, searchEngines: SEARCH_ENGINES, searchOrder: SEARCH_ORDER, mcpPresets: MCP_PRESETS };
 
 const FILE = process.env.DATA_FILE || './data.json';
+const TMP = FILE + '.tmp';
+const BAK = FILE + '.bak';
 const OUTDIR = process.env.REPORT_DIR || 'reports';
 export const uid = () => randomUUID().replace(/-/g, '').slice(0, 8);
+const pad = n => String(n).padStart(2, '0');
+const stamp = ts => { const d = new Date(ts);
+  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`; };
+export const safeReportName = n => /^report-\d{14}\.md$/.test(String(n)) ? String(n) : null;
+export const reportDir = () => OUTDIR;
 export const screens = new Map();
 const listeners = new Set();
 export const onEvent = fn => listeners.add(fn);
@@ -23,7 +30,7 @@ const emptyKeys = () => Object.fromEntries([...Object.keys(PROVIDERS), ...Object
 
 function defaults() {
   return {
-    company: { name: 'Virtual Company', goal: '', running: false, startedAt: 0 },
+    company: { name: 'Virtual Company', goal: '', running: false, startedAt: 0, logo: '' },
     user: { name: '오너' },
     ranks: ['대표', '이사', '팀장', '사원'],
     settings: {
@@ -61,35 +68,61 @@ function defaults() {
   };
 }
 
+// mcp 권한: 구버전 true는 'all'로, 서버 이름 하나만 적힌 문자열은 목록으로 승격한다.
+// 이미 'all'이거나 배열인 값은 그대로 둬야 한다 — !Array.isArray로 묶으면 'all'이 부팅마다 []로 초기화되었다.
+const normMcp = v => v === true || v === 'all' ? 'all'
+  : Array.isArray(v) ? v.filter(x => typeof x === 'string' && x)
+    : !v || v === false ? [] : [String(v)];
+
+// 저장된 상태를 지금 코드 모양으로 맞춘다. 없으면 비워 두지 않고 기본값으로 채운다.
+function normalize(s) {
+  const d = defaults();
+  s.company = { ...d.company, ...(s.company || {}), running: false, startedAt: s.company?.startedAt || 0 };
+  s.user ||= d.user;
+  s.ranks ||= d.ranks;
+  s.settings ||= {};
+  s.settings.keys = { ...emptyKeys(), ...(s.settings.keys || {}) };
+  s.settings.search = { ...d.settings.search, ...(s.settings.search || {}) };
+  s.settings.app = { ...d.settings.app, ...(s.settings.app || {}) };
+  s.settings.mcpConfig ||= d.settings.mcpConfig;
+  s.employees ||= d.employees;
+  s.employees.forEach(e => {
+    e.status = 'idle'; e.activity = '대기 중'; e.inbox ||= []; e.memory ||= []; e.apiKey ||= ''; e.baseUrl ||= ''; e.avatar ||= '';
+    e.color ||= '#4f46e5';        // 색이 비면 <input type=color> 가 "undefined" 를 받아 경고를 남긴다
+    e.tools ||= {}; e.tools.web = !!e.tools.web; e.tools.browser = !!e.tools.browser; e.tools.computer = !!e.tools.computer;
+    e.tools.mcp = normMcp(e.tools.mcp);
+  });
+  // 멤버가 있는 채널이 곧 팀이다. 기존 채널은 멤버 없는 일반 채널로 남는다.
+  s.channels ||= [];
+  s.channels.forEach(c => { c.members ||= []; });
+  s.tasks ||= []; s.messages ||= []; s.logs ||= []; s.mcpStatus ||= {};
+  s.cancelled ||= []; s.approvals ||= []; s.lastRun ||= null;
+  // 진행 중이던 업무는 자동으로 다시 달리지 않는다. 멈춤으로 두고 화면에서 명시적으로 재개한다.
+  // 결재 서류는 서버가 꺼져도 만료되지 않는다 → 대기 중인 결재에 묶인 업무는 결재 상태를 그대로 유지한다.
+  const waiting = new Set(s.approvals.filter(a => a.status === 'pending').map(a => a.id));
+  s.tasks.forEach(t => {
+    if (t.status === 'doing') { t.status = 'paused'; t.note = '서버가 꺼진 사이 멈췄습니다'; }
+    if (t.status === 'blocked' && !waiting.has(t.blockedBy)) { t.status = 'paused'; delete t.blockedBy; }
+  });
+  return s;
+}
+
+const readJson = f => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; } };
+
+// 읽기 실패를 조용히 기본값 대체로 넘기지 않는다. 손상 본은 반드시 다른 이름으로 남긴 뒤 복구 순서를 따른다.
 function load() {
-  try {
-    const s = JSON.parse(fs.readFileSync(FILE, 'utf8'));
-    s.company.running = false;
-    const d = defaults();
-    s.settings.keys = { ...emptyKeys(), ...(s.settings.keys || {}) };
-    s.settings.search = { ...d.settings.search, ...(s.settings.search || {}) };
-    s.settings.app = { ...d.settings.app, ...(s.settings.app || {}) };
-    s.settings.mcpConfig ||= d.settings.mcpConfig;
-    s.employees.forEach(e => {
-      e.status = 'idle'; e.activity = '대기 중'; e.inbox ||= []; e.memory ||= []; e.apiKey ||= ''; e.baseUrl ||= ''; e.avatar ||= '';
-      // 이전 버전의 mcp true/false를 서버 이름 목록으로 승격
-      if (e.tools?.mcp === true) e.tools.mcp = 'all';
-      else if (e.tools && !Array.isArray(e.tools.mcp)) e.tools.mcp = [];
-    });
-    // 멤버가 있는 채널이 곧 팀이다. 기존 채널은 멤버 없는 일반 채널로 남는다.
-    s.channels ||= [];
-    s.channels.forEach(c => { c.members ||= []; });
-    s.cancelled ||= []; s.approvals ||= []; s.lastRun ||= null;
-    s.company.startedAt ||= 0;
-    // 진행 중이던 업무는 자동으로 다시 달리지 않는다. 멈춤으로 두고 화면에서 명시적으로 재개한다.
-    // 결재 서류는 서버가 꺼져도 만료되지 않는다 → 대기 중인 결재에 묶인 업무는 결재 상태를 그대로 유지한다.
-    const waiting = new Set(s.approvals.filter(a => a.status === 'pending').map(a => a.id));
-    s.tasks.forEach(t => {
-      if (t.status === 'doing') { t.status = 'paused'; t.note = '서버가 꺼진 사이 멈췄습니다'; }
-      if (t.status === 'blocked' && !waiting.has(t.blockedBy)) { t.status = 'paused'; delete t.blockedBy; }
-    });
-    return s;
-  } catch { return defaults(); }
+  if (!fs.existsSync(FILE)) return normalize(defaults());
+  const cur = readJson(FILE);
+  if (cur) return normalize(cur);
+  const kept = `${FILE.replace(/\.json$/, '')}.corrupt-${stamp(Date.now())}.json`;
+  try { fs.copyFileSync(FILE, kept); } catch { }
+  const bak = readJson(BAK);
+  if (bak) {
+    console.error(`data.json이 손상되어 직전 본(.bak)으로 복구했습니다 · 손상 본은 ${kept} 에 보존`);
+    return normalize(bak);
+  }
+  console.error(`data.json을 해석할 수 없어 새 회사로 시작합니다 · 손상 본은 ${kept} 에 그대로 있습니다 (되돌리려면 이 파일을 data.json으로 복사)`);
+  return normalize(defaults());
 }
 
 export const state = load();
@@ -99,17 +132,28 @@ export const resolveKey = e => e.apiKey || state.settings.keys[e.provider] || ''
 export const maskKey = k => k ? '••••' + k.slice(-4) : '';
 
 let pushT = null, saveT = null;
+// 임시 파일에 끝까지 쓴 뒤 rename으로 갈아끼운다. 쓰는 도중 프로세스가 죽어도 data.json은 직전 온전한 본으로 남는다.
+// 교체 전에 직전 본을 .bak으로 옮겨 두므로, 파일이 망가지면 직전 상태까지 되돌릴 수 있다.
+function save() {
+  const payload = JSON.stringify(state);
+  try {
+    fs.writeFileSync(TMP, payload);
+    if (fs.existsSync(FILE)) fs.copyFileSync(FILE, BAK);
+    try { fs.renameSync(TMP, FILE); }
+    catch { fs.writeFileSync(FILE, payload); }   // rename이 파일 잠식에 막히면 내용만 교체한다 (TMP는 복구용으로 남김)
+  } catch (e) { console.error('data.json 저장 실패:', e.message); }
+}
 export function changed() {
   if (!pushT) pushT = setTimeout(() => { pushT = null; emit({ type: 'state', state: publicState() }); }, 120);
-  if (!saveT) saveT = setTimeout(() => { saveT = null; fs.writeFile(FILE, JSON.stringify(state), e => { if (e) console.error('data.json 저장 실패:', e.message); }); }, 600);
+  if (!saveT) saveT = setTimeout(() => { saveT = null; save(); }, 600);
 }
 
-// 종료 직전 대기 중인 저장까지 확실히 쓴다. 이 걸림없면 창을 강제로 닫을 때 방금 넣은 API 키가 사라진다.
-export function flush() {
-  clearTimeout(saveT); saveT = null;
-  try { fs.writeFileSync(FILE, JSON.stringify(state)); }
-  catch (e) { console.error('data.json 저장 실패:', e.message); }
-}
+// 키·MCP 권한·로고처럼 잃으면 아픈 변화는 600ms를 기다리지 않고 즉시 쓴다.
+// 저장 직후 창을 닫으면(강제 종료) 아직 파일에 닿기 전이라 값이 초기화되어 보였다.
+export function saveNow() { clearTimeout(saveT); saveT = null; save(); }
+
+// 종료 직전 대기 중인 저장까지 확실히 쓴다.
+export const flush = saveNow;
 
 export function publicState() {
   const { settings, ...rest } = state;
@@ -248,12 +292,6 @@ export function decideApproval(id, approved, note = '') {
 }
 
 // ---------- 작업 종료 보고서 ----------
-const pad = n => String(n).padStart(2, '0');
-const stamp = ts => { const d = new Date(ts);
-  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`; };
-export const safeReportName = n => /^report-\d{14}\.md$/.test(String(n)) ? String(n) : null;
-export const reportDir = () => OUTDIR;
-
 export function writeReport() {
   const at = Date.now();
   const done = state.tasks.filter(t => t.status === 'done');
