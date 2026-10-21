@@ -45,7 +45,13 @@ const providerOptions = sel => (S.catalog?.providerGroups || []).map(([g, gl]) =
 }).join('');
 const TOOLS = { web: '웹 검색', browser: 'Playwright', computer: '컴퓨터 유즈', mcp: 'MCP' };
 const appCfg = () => S.settings.app || {};
-const mcpServers = () => Object.keys(S.mcpStatus || {});
+// 서버 목록은 '연결 성공'이 아니라 '등록 + 연결 상태'의 합집합이다. 연결에 실패한 서버도 허용 대상으로 보여야
+// 직원을 고정한 뒤 재연결했을 때 권한이 되살아난다.
+const mcpServers = () => {
+  let cfg = {};
+  try { cfg = JSON.parse(S.settings?.mcpConfig || '{}').mcpServers || {}; } catch { /* 설정이 깨지면 연결된 것만 쓴다 */ }
+  return [...new Set([...Object.keys(cfg), ...Object.keys(S.mcpStatus || {})])];
+};
 const keyBadge = e => e.hasKey ? '<span class="chip">개인 키</span>'
   : e.usingGlobalKey ? '<span class="chip">전역 키</span>' : '<span class="chip warn-chip">키 없음</span>';
 const toolChips = e => {
@@ -862,7 +868,7 @@ function editEmp(e) {
     <label>사용 가능한 도구</label><div class="checks">${Object.entries(TOOLS).map(([k, l]) => `<label><input type="checkbox" data-tool="${k}" ${(k === 'mcp' ? mcpOn : !!t[k]) ? 'checked' : ''}>${l}</label>`).join('')}</div>
     ${srvs.length ? `<label>허용할 MCP 서버${mcpOn ? '' : ' · MCP를 켜야 선택할 수 있습니다'}</label><div class="checks" id="mcpServers"><label><input type="checkbox" id="mcpAll" ${allSel ? 'checked' : ''}>전체 (뒤에 추가되는 서버 포함)</label>
       ${srvs.map(s => `<label><input type="checkbox" data-mcp="${esc(s)}" ${t.mcp === 'all' || Array.isArray(t.mcp) && t.mcp.includes(s) ? 'checked' : ''}>${esc(s)}</label>`).join('')}</div>`
-      : '<div class="status">연결된 MCP 서버가 없습니다. 설정 탭의 MCP 서버에서 추가하세요.</div>'}
+      : '<div class="status">등록된 MCP 서버가 없습니다. 지금 MCP를 켜 두면 설정 탭에서 서버를 추가하는 순간 이 직원에도 전체 허용으로 잡힙니다.</div>'}
     <div class="warn">컴퓨터 유즈는 설정 탭의 "PC 조작 허용"이 켜져 있을 때만 실제로 노출됩니다. 켜지면 AI가 이 PC의 실제 마우스·키보드를 조작합니다.</div>
     <div class="btns">${e ? `<button type="button" class="danger lbl" id="m_del" title="${esc(x.name)}님 해고">${ico('trash', 15)}해고</button>${ib('기억 · 대기 메시지 초기화', 'reset', '', 'id="m_reset"')}` : ''}${ib('취소', 'close', '', 'id="m_close"')}${ib('저장', 'save', 'primary', 'id="m_save"')}</div>`;
   $('#modal').classList.remove('hidden');
@@ -952,12 +958,12 @@ function editEmp(e) {
     document.querySelectorAll('[data-tool]').forEach(c => body.tools[c.dataset.tool] = c.checked);
     body.avatar = avatar;
     body.teams = [...document.querySelectorAll('[data-teamcb]')].filter(c => c.checked).map(c => c.dataset.teamcb);
-    // 서버 목록이 비어 있으면 체크박스가 렌더되지 않는다. 그때 'all'을 새로 만들면
-    // 목록으로 좁혀 둔 권한이 서버를 지울 때마다 전체 허용으로 넓어진다 — 지금 값을 보존한다.
+    // 서버 목록이 렌더되지 않는 순간에도 MCP를 켤 수는 있어야 한다. 단 서버 이름으로 좁혀 둔 권한은
+    // 서버를 지울 때마다 전체 허용으로 넓어지면 안 된다 — 그 경우만 지금 값을 보존한다.
     const all = $('#mcpAll');
     const grant = !body.tools.mcp ? [] : all ? (all.checked ? 'all'
       : [...document.querySelectorAll('[data-mcp]')].filter(c => c.checked).map(c => c.dataset.mcp))
-      : (t.mcp === undefined ? 'all' : t.mcp);
+      : (Array.isArray(t.mcp) && t.mcp.length ? t.mcp : 'all');
     body.tools.mcp = grant;
     if (!body.name || !body.model) { toast('이름과 모델 ID는 반드시 채워야 합니다', 'err'); return; }
     if (clearBox?.checked) body.apiKey = '';
