@@ -260,8 +260,10 @@ app.delete('/api/employees/:id', (req, res) => {
 });
 app.post('/api/employees/:id/reset', (req, res) => {
   const e = state.employees.find(x => x.id === req.params.id);
-  if (e) { e.memory = []; e.inbox = []; delete e.thought; delete e.cooldownUntil; changed(); saveNow(); }
-  ok(res);
+  // 화면이 오래된 탭이면 이미 없는 직원을 비우면서 성공이라고 알려준다. 없는 직원이라고 솔직히 답한다.
+  if (!e) return res.status(404).json({ error: '직원을 찾을 수 없습니다' });
+  e.memory = []; e.inbox = []; delete e.thought; delete e.cooldownUntil;
+  changed(); saveNow(); ok(res);
 });
 
 // ---------- 기록 정리 ----------
