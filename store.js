@@ -9,12 +9,84 @@ const FILE = process.env.DATA_FILE || './data.json';
 const TMP = FILE + '.tmp';
 const BAK = FILE + '.bak';
 const OUTDIR = process.env.REPORT_DIR || 'reports';
+const UPLOADS = process.env.UPLOAD_DIR || 'uploads';
 export const uid = () => randomUUID().replace(/-/g, '').slice(0, 8);
 const pad = n => String(n).padStart(2, '0');
 const stamp = ts => { const d = new Date(ts);
   return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`; };
 export const safeReportName = n => /^report-\d{14}\.md$/.test(String(n)) ? String(n) : null;
 export const reportDir = () => OUTDIR;
+export const uploadDir = () => UPLOADS;
+export const kb = n => n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
+
+// ---------- 오너의 업무 명령 첨부 ----------
+// 본체는 data.json에 박지 않고 uploads/ 에 파일로만 둔다. state에는 메타정보만 들어간다.
+// file 칸은 구분자(경로)를 절대 허용하지 않는다 — 저장된 이름으로 읽을 때 임의 경로로 빠져나갈 구멍을 없앤다.
+const ATT_FILE = /^[\w.\-() 가-힣]{1,150}$/;
+const ATT_MAX = 8 * 1024 * 1024;               // 첨부 한 장 최대 8MB
+const ATT_TEXT_MAX = 512 * 1024;               // 이보다 큰 "텍스트"는 본문 대신 경로만 전달한다
+const ATT_INLINE = 20000;                      // 지시문에 박아 넣는 본문 최대 글자 수
+const TEXT_EXT = /\.(md|markdown|txt|csv|tsv|json|jsonl|ya?ml|xml|html?|js|jsx|mjs|ts|tsx|py|java|kt|c|h|cpp|cs|go|rs|rb|php|swift|sh|bash|bat|ps1|sql|ini|conf|toml|log|svg|srt|vtt|tex|r)$/i;
+export const isTextAttachment = (mime, name) =>
+  /^(text\/|application\/(json|xml|x-yaml|x-yaml|javascript|toml|csv))/i.test(String(mime || ''))
+  || TEXT_EXT.test(String(name || ''));
+const safeFileName = n => {
+  const base = path.basename(String(n || 'file')).replace(/[^\w.\-() 가-힣]/g, '_').slice(0, 100);
+  return base.replace(/^\.+/, '') || 'file';
+};
+// 브라우저가 올려준 첨부를 디스크에 쓰고, state에 들어갈 메타정보만 돌려준다.
+export function saveAttachment({ name, mime, buf }) {
+  if (!buf?.length) throw new Error('파일이 비어 있습니다');
+  if (buf.length > ATT_MAX) throw new Error(`${kb(buf.length)}은 첨부 한계(${kb(ATT_MAX)})를 넘습니다`);
+  fs.mkdirSync(UPLOADS, { recursive: true });
+  const id = uid();
+  const original = safeFileName(name);
+  const file = `${id}-${original}`;
+  if (!ATT_FILE.test(file)) throw new Error('파일 이름에 사용할 수 없는 문자가 있습니다');
+  fs.writeFileSync(path.join(UPLOADS, file), buf);
+  return { id, name: String(name || file).slice(0, 160), mime: String(mime || '').slice(0, 100),
+    size: buf.length, kind: isTextAttachment(mime, original) && buf.length <= ATT_TEXT_MAX ? 'text' : 'binary',
+    file, at: Date.now() };
+}
+// 브라우저에서 넘어온 첨부 목록을 우리가 만든 것만 남은 형태로 좁힌다 (경로·종류 검증 지점).
+export const attList = v => Array.isArray(v) ? v.filter(a => a && a.id && ATT_FILE.test(String(a.file || ''))).map(a => ({
+  id: String(a.id).replace(/[^\w-]/g, '').slice(0, 16), file: String(a.file).slice(0, 150),
+  name: String(a.name || a.file).slice(0, 160), mime: String(a.mime || '').slice(0, 100),
+  size: Number(a.size) || 0, kind: a.kind === 'text' ? 'text' : 'binary', at: Number(a.at) || Date.now(),
+})).slice(0, 20) : [];
+export const findAttachment = id => [state.company.attachments || [], ...(state.tasks || []).map(t => t.attachments || [])]
+  .flat().find(a => a.id === String(id));
+// 지시문 뒤에 붙일 첨부 블록. 텍스트는 본문을 옮겨 담고, 그 외 형식은 경로만 안내한다.
+export function attachmentBlock(list) {
+  const atts = list || [];
+  if (!atts.length) return '';
+  const body = atts.map((a, i) => {
+    if (!ATT_FILE.test(String(a.file || ''))) return `${i + 1}. ${a.name} · (안전상 사용할 수 없는 파일명 — 다시 첨부해 주세요)`;
+    const abs = path.resolve(UPLOADS, a.file);
+    const head = `${i + 1}. ${a.name} · ${kb(a.size)} · 로컬 경로: ${abs}`;
+    if (a.kind !== 'text') return `${head}\n   (이 형식은 서버가 본문을 읽지 않습니다. computer_open이나 browser_navigate(file://경로)로 열거나 파일을 읽을 수 있는 도구로 열어 보세요)`;
+    let txt;
+    try { txt = fs.readFileSync(abs, 'utf8'); } catch { return `${head}\n   (저장된 파일을 찾을 수 없습니다. 오너가 지시 전에 삭제했을 수 있습니다)`; }
+    const cut = txt.length > ATT_INLINE;
+    return `${head}\n${'─'.repeat(20)} 본문 시작 (${a.name}) ${'─'.repeat(20)}\n${txt.slice(0, ATT_INLINE)}${cut ? `\n…(본문 ${txt.length.toLocaleString()}자 중 ${ATT_INLINE.toLocaleString()}자만 실렸습니다 · 전체는 위 경로에 있습니다)` : ''}\n${'─'.repeat(20)} 본문 끝 ${'─'.repeat(20)}`;
+  });
+  return `\n\n[오너가 이 지시와 함께 첨부한 파일 ${atts.length}개 — 내용이 사실 데이터로 취급하고 그대로 사용하세요]\n${body.join('\n\n')}`;
+}
+// 더 이상 아무 지시도 참조하지 않는 첨부 파일을 지운다. 방금 올려 아직 제출 전인 파일은 건드리지 않는다.
+export function pruneUploads(keep = 600000) {
+  let names;
+  try { names = fs.readdirSync(UPLOADS); } catch { return; }
+  const live = new Set([state.company.attachments || [], ...state.tasks.map(t => t.attachments || [])].flat().map(a => a.file));
+  const now = Date.now();
+  for (const n of names) {
+    if (live.has(n)) continue;
+    try {
+      const st = fs.statSync(path.join(UPLOADS, n));
+      if (!st.isFile() || now - st.mtimeMs < keep) continue;
+      fs.rmSync(path.join(UPLOADS, n));
+    } catch { /* 한 개 실패가 나머지를 막지 못하게 */ }
+  }
+}
 export const screens = new Map();
 const listeners = new Set();
 export const onEvent = fn => listeners.add(fn);
@@ -30,11 +102,12 @@ const emptyKeys = () => Object.fromEntries([...Object.keys(PROVIDERS), ...Object
 
 function defaults() {
   return {
-    company: { name: 'Virtual Company', goal: '', running: false, startedAt: 0, logo: '' },
+    company: { name: 'Virtual Company', goal: '', running: false, startedAt: 0, logo: '', attachments: [] },
     user: { name: '오너' },
     ranks: ['대표', '이사', '팀장', '사원'],
     settings: {
       keys: emptyKeys(),
+      theme: '',                                             // '' = 시스템 설정을 따른다
       search: { provider: 'auto', googleCx: '', searxngUrl: '' },
       mcpConfig: JSON.stringify({ mcpServers: {} }, null, 2),
       app: { maxSteps: 8, headless: true, startUrl: '', computerEnabled: false },
@@ -78,10 +151,12 @@ const normMcp = v => v === true || v === 'all' ? 'all'
 function normalize(s) {
   const d = defaults();
   s.company = { ...d.company, ...(s.company || {}), running: false, startedAt: s.company?.startedAt || 0 };
+  s.company.attachments = attList(s.company.attachments);   // 첨부 메타는 항상 우리 형식으로 좁힌다
   s.user ||= d.user;
   s.ranks ||= d.ranks;
   s.settings ||= {};
   s.settings.keys = { ...emptyKeys(), ...(s.settings.keys || {}) };
+  s.settings.theme = ['light', 'dark'].includes(s.settings.theme) ? s.settings.theme : '';
   s.settings.search = { ...d.settings.search, ...(s.settings.search || {}) };
   s.settings.app = { ...d.settings.app, ...(s.settings.app || {}) };
   s.settings.mcpConfig ||= d.settings.mcpConfig;
@@ -101,6 +176,7 @@ function normalize(s) {
   // 결재 서류는 서버가 꺼져도 만료되지 않는다 → 대기 중인 결재에 묶인 업무는 결재 상태를 그대로 유지한다.
   const waiting = new Set(s.approvals.filter(a => a.status === 'pending').map(a => a.id));
   s.tasks.forEach(t => {
+    t.attachments = attList(t.attachments);
     if (t.status === 'doing') { t.status = 'paused'; t.note = '서버가 꺼진 사이 멈췄습니다'; }
     if (t.status === 'blocked' && !waiting.has(t.blockedBy)) { t.status = 'paused'; delete t.blockedBy; }
   });
@@ -126,6 +202,7 @@ function load() {
 }
 
 export const state = load();
+pruneUploads();                                 // 전에 쓰다 만 첨부는 부팅 때 한 번 정리한다
 
 // 직원 키 우선, 비어 있으면 제공사별 전역 키로 폴백
 export const resolveKey = e => e.apiKey || state.settings.keys[e.provider] || '';
@@ -169,6 +246,7 @@ export function publicState() {
     settings: {
       mcpConfig: settings.mcpConfig,
       app: settings.app,
+      theme: settings.theme,
       search: settings.search,
       keys: Object.fromEntries(Object.entries(settings.keys).map(([k, v]) => [k, maskKey(v)])),
     },
@@ -299,6 +377,7 @@ export function writeReport() {
     `# ${state.company.name} · 작업 종료 보고서`,
     `생성 시각: ${new Date(at).toLocaleString('ko-KR')}`,
     `회사 목표: ${state.company.goal || '(미설정)'}`,
+    ...(state.company.attachments?.length ? [`가동 지시 첨부: ${state.company.attachments.map(a => a.name).join(', ')}`] : []),
     '',
     `## 완료된 업무 (${done.length}건)`,
   ];
@@ -307,6 +386,7 @@ export function writeReport() {
     lines.push(`\n### ${i + 1}. ${t.title}`,
       `- 담당: ${nameOf(t.assigneeId)} / 지시: ${nameOf(t.assignerId)}`,
       `- 내용: ${t.description || '-'}`,
+      ...(t.attachments?.length ? [`- 첨부: ${t.attachments.map(a => `${a.name} (${kb(a.size)})`).join(', ')}`] : []),
       `- 완료 시각: ${new Date(t.doneAt || at).toLocaleString('ko-KR')}`,
       `- 결과:\n\n${String(t.result || '(결과 없음)').split('\n').map(l => '  ' + l).join('\n')}`);
   });

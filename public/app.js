@@ -88,6 +88,9 @@ const ICONS = {
   bell: '<path d="M7.6 10.2a4.4 4.4 0 0 1 8.8 0c0 3.9 1.6 5.4 1.6 5.4H6s1.6-1.5 1.6-5.4Z"/><path d="M10.4 18.6a1.8 1.8 0 0 0 3.2 0"/>',
   box: '<path d="M3.6 7.8 12 4.2l8.4 3.6v8.4L12 19.8l-8.4-3.6Z"/><path d="M3.6 7.8 12 11.4l8.4-3.6"/><path d="M12 11.4v8.4"/>',
   copy: '<rect x="8.6" y="8.6" width="11.4" height="11.4" rx="2"/><path d="M15.8 5.6H6.4a2 2 0 0 0-2 2v9.4"/>',
+  clip: '<path d="M20.4 11.5 12 19.9a5.2 5.2 0 0 1-7.4-7.4l8.4-8.4a3.4 3.4 0 0 1 4.9 4.9L9.6 17.3a1.6 1.6 0 0 1-2.3-2.3l7.4-7.4"/>',
+  moon: '<path d="M20.4 14.1A8.4 8.4 0 0 1 9.9 3.6a8.7 8.7 0 1 0 10.5 10.5Z"/>',
+  contrast: '<circle cx="12" cy="12" r="8.4"/><path d="M12 3.6a8.4 8.4 0 0 1 0 16.8Z" fill="currentColor" stroke="none"/>',
 };
 const ico = (n, s = 18) => `<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n] || ''}</svg>`;
 // 글자 대신 아이콘 버튼. 한국어 이름은 title(툴팁)과 aria-label(스크린리더)로 그대로 남긴다.
@@ -151,6 +154,44 @@ function paintLogoPrev() {
   const lb = $('#logoPickTxt'); if (lb) lb.textContent = logoDraft ? '로고 교체' : '로고 선택';
 }
 
+// ---------- 업무 명령 첨부 ----------
+const MAX_ATT = 8 * 1024 * 1024;
+const kb = n => n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
+const toB64 = f => new Promise((res, rej) => {
+  const r = new FileReader();
+  r.onload = () => res(String(r.result).split(',')[1] || '');
+  r.onerror = () => rej(new Error('파일을 읽을 수 없습니다'));
+  r.readAsDataURL(f);
+});
+// 파일은 서버에 한 번 올려 메타정보(id·경로·종류)만 받아 쓴다. 본문은 data.json에 들어가지 않는다.
+async function uploadFiles(files) {
+  const out = [];
+  for (const f of files) {
+    if (f.size > MAX_ATT) { toast(`${f.name} · ${kb(f.size)}은 첨부 한계(${kb(MAX_ATT)})를 넘습니다`, 'err'); continue; }
+    let b64;
+    try { b64 = await toB64(f); } catch { toast(`${f.name}을(를) 읽을 수 없습니다`, 'err'); continue; }
+    const rec = await api('POST', '/api/attachments', { name: f.name, mime: f.type, data: b64 });
+    if (rec?.id) out.push(rec);                                 // 실패는 api()가 원문과 함께 토스트로 알린다
+  }
+  return out;
+}
+const attChip = (a, detach) => `<span class="atchip" title="${esc(a.name)} · ${kb(a.size)} · ${a.kind === 'text' ? '본문을 지시문에 옮겨 담음' : '경로만 전달 · 바이너리 형식'}">
+  ${ico('doc', 13)}<a href="/api/attach/${esc(a.id)}" download>${esc(a.name)}</a>
+  ${detach ? `<button type="button" class="ib x" ${detach}="${esc(a.id)}" title="첨부 제거" aria-label="${esc(a.name)} 첨부 제거">${ico('close', 13)}</button>` : ''}</span>`;
+// 여러 줄 지시를 편하게 쓰도록 입력 칸을 내용에 맞춰 키운다. 너무 길어지면 안에서 스크롤 된다.
+function grow(el, max = 300) {
+  if (!el) return;
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight + 2, max) + 'px';
+}
+// 업무 카드에 긴 지시를 다 펼치면 판이 망가진다 — 짧으면 그대로, 길면 접어서 전문을 보여준다.
+const longText = d => {
+  const s = String(d || '');
+  if (!s) return '';
+  if (s.length <= 200) return `<div class="sm">${esc(s)}</div>`;
+  return `<details class="dd"><summary>${esc(s.slice(0, 150).replace(/\s+/g, ' '))}… · 지시 ${s.length.toLocaleString()}자</summary><div class="sm">${esc(s)}</div></details>`;
+};
+
 // ---------- WebSocket ----------
 function connect() {
   const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
@@ -173,7 +214,8 @@ function header() {
     if (logo && img.getAttribute('src') !== logo) img.src = logo;   // src 속성에만 대입 → 마크업으로 새어가지 않는다
   }
   $('#brandName').textContent = S.company.name;
-  if (document.activeElement !== $('#goal')) $('#goal').value = S.company.goal;
+  if (document.activeElement !== $('#goal')) { $('#goal').value = S.company.goal; grow($('#goal'), 172); }
+  paintRunAtts(); paintThemeBtn();
   const b = $('#runBtn');
   const label = S.company.running ? '일시정지' : '업무 시작';
   b.innerHTML = ico(S.company.running ? 'pause' : 'play', 19);
@@ -181,6 +223,32 @@ function header() {
   b.setAttribute('aria-label', label);
   b.className = 'run ' + (S.company.running ? 'stop' : 'primary');
 }
+// 이번 가동의 지시에 붙은 첨부. 서버가 정답이므로 S.company.attachments 를 그대로 그린다.
+function paintRunAtts() {
+  const el = $('#goalAtts'); if (!el) return;
+  const list = S.company.attachments || [];
+  el.hidden = !list.length;
+  if (!list.length) { el.innerHTML = ''; return; }
+  el.innerHTML = `<span class="alab">${ico('clip', 13)}이 명령의 첨부 ${list.length}개</span>${list.map(x => attChip(x, 'data-rundetach')).join('')}`;
+}
+// 아직 제출하지 않은 업무 첨부 목록. 탭을 옮기거나 상태가 와도 유지된다.
+function paintTfChips() {
+  const el = $('#tfChips'); if (!el) return;
+  el.innerHTML = taskAtts.map(x => attChip(x, 'data-tfdetach')).join('')
+    || '<span class="asize">첨부한 파일은 이 업무 지시문에 본문(텍스트) 또는 경로(그 외 형식)로 실립니다</span>';
+}
+const themeValue = () => (S?.settings?.theme === 'light' || S?.settings?.theme === 'dark')
+  ? S.settings.theme : (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+// 해 모양은 쓰지 않는다 — 낮/밤을 초승달과 대조 원으로 구분한다.
+function paintThemeBtn() {
+  const dark = themeValue() === 'dark';
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  const b = $('#themeBtn'); if (!b) return;
+  b.innerHTML = ico(dark ? 'contrast' : 'moon', 19);
+  const label = dark ? '주간 모드로' : '야간 모드로';
+  b.title = label; b.setAttribute('aria-label', label);
+}
+matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => { if (!S?.settings?.theme) paintThemeBtn(); });
 // 결재 대기 건은 탭 아이콘 위로도 보인다
 let badgeSeen = -1;
 function tabBadge() {
@@ -205,6 +273,27 @@ $('#runBtn').onclick = async () => {
   toast(starting ? '업무 시작 · 대기 중인 업무부터 다시 달립니다'
     : '일시정지 · 진행 중이던 업무는 "멈춤" 칸으로 이동했습니다\n다시 하려면 업무 카드의 ▶을 누르세요 (보낸 메시지는 재개 후에 처리됩니다)');
 };
+// 목표는 길게 써도 지워지지 않는다 — Enter는 업무 시작, Shift+Enter는 줄바꿈
+$('#goal').addEventListener('input', () => grow($('#goal'), 172));
+$('#goal').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('#runBtn').click(); }
+});
+$('#f_goal').onchange = async ev => {
+  const files = [...(ev.target.files || [])]; if (!files.length) return;
+  ev.target.value = '';                                     // 같은 파일을 다시 골라도 change 가 다시 걸린다
+  const added = await uploadFiles(files);
+  if (!added.length) return;
+  const list = [...(S.company.attachments || []), ...added];
+  await api('PUT', '/api/company', { attachments: list });
+  S.company.attachments = list; paintRunAtts();
+  toast(`${added.map(a => a.name).join(', ')} 첨부 완료 · 업무 시작 시 대표에게 본문(또는 경로)이 함께 전달됩니다`);
+};
+$('#themeBtn').onclick = async () => {
+  const next = themeValue() === 'dark' ? 'light' : 'dark';
+  try { localStorage.setItem('vc.theme', next); } catch { /* 시크릿 모드 등에서는 화면 적용만 유지 */ }
+  S.settings.theme = next; paintThemeBtn();                  // WS 왕복을 기다리지 않고 즉시 바꾼다
+  await api('PUT', '/api/settings', { theme: next });
+};
 $('#tabs').onclick = e => {
   const t = e.target.closest('[data-tab]')?.dataset.tab; if (!t) return;
   tab = t; document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === t)); build();
@@ -212,16 +301,30 @@ $('#tabs').onclick = e => {
 // 탭은 아이콘만 보인다 — 이름은 툴팁과 aria-label로 남는다
 $('#tabs').innerHTML = [['office', '오피스'], ['tasks', '업무'], ['chat', '메신저'], ['org', '조직'], ['settings', '설정']]
   .map(([id, label]) => `<button data-tab="${id}"${id === tab ? ' class="on"' : ''} title="${label}" aria-label="${label}">${ico(id, 19)}</button>`).join('');
+// 아이콘 SVG는 정적 마크업에 넣을 수 없어 여기서 채운다
+document.querySelectorAll('.pickclip').forEach(el => el.insertAdjacentHTML('afterbegin', ico('clip', 19)));
+paintThemeBtn();                                 // 서버 상태를 기다리지 않고 첫 화면부터 테마를 맞춘다
+grow($('#goal'), 172);
 
 // ---------- 화면 ----------
 let logoDraft = '', logoSaved = null;               // 설정 탭에서 아직 저장하지 않은 로고 미리보기 / 서버에 있다고 아는 값
+let taskAtts = [], attBusy = false;                 // 아직 제출하지 않은 업무 첨부 / 업로드 진행 중
+let tfDraft = { title: '', description: '' };       // 탭을 옮겨도 지시 문구가 사라지지 않게 잠시 든다
 const shells = {
   office: () => `<div class="office"><div class="floor" id="desks"></div><aside class="offside">
     <div id="banner"></div>
     <div class="card apprbox" id="apprBox"></div>
     <div class="card resbox" id="resBox"></div>
     <div class="card feed"><h3>실시간 활동</h3><div id="feed"></div></aside></aside></div>`,
-  tasks: () => `<form class="taskform" id="tf"><input name="title" placeholder="업무 제목" required><input name="description" placeholder="상세 내용 / 기대 산출물"><select name="assigneeId" id="asg"></select><button class="ib primary" type="submit" title="업무 지시" aria-label="업무 지시">${ico('plus')}</button></form><div class="board" id="board"></div>`,
+  tasks: () => `<form class="taskform" id="tf">
+    <input name="title" placeholder="업무 제목 (한 줄)" required maxlength="300" value="${esc(tfDraft.title)}">
+    <textarea name="description" id="tfDesc" rows="1" placeholder="상세 지시 · 길게 써도 됩니다 · Shift+Enter 줄바꿈, Enter 업무 지시">${esc(tfDraft.description)}</textarea>
+    <div class="tfrow">
+      <label class="pick sm">${ico('clip', 15)}<span>파일 첨부</span><input type="file" id="f_tf" multiple hidden></label>
+      <span class="atchips" id="tfChips"></span>
+      <select name="assigneeId" id="asg"></select>
+      <button class="ib primary" type="submit" title="업무 지시" aria-label="업무 지시">${ico('plus')}</button>
+    </div></form><div class="board" id="board"></div>`,
   chat: () => `<div class="chat"><aside class="chans" id="chans"></aside><section class="room"><div class="chhead" id="chhead"></div><div class="msgs" id="msgs"></div><form class="send" id="send"><input id="msgIn" placeholder="메시지 입력 · @이름 으로 직원 호출" autocomplete="off"><button class="ib primary" type="submit" title="전송" aria-label="전송">${ico('send')}</button></form></section></div>`,
   org: () => `<div class="grid2"><div class="colstack">
     <div class="card"><div class="cardhead"><h3>직원</h3>${ib('직원 채용', 'userplus', 'primary', 'id="addEmp"')}</div><div id="emps"></div></div>
@@ -406,6 +509,25 @@ const updaters = {
   },
   tasks() {
     const a = $('#asg'), v = a.value;
+    paintTfChips();
+    const ti = $('#tf [name="title"]'), d = $('#tfDesc'), fin = $('#f_tf');
+    if (ti) ti.oninput = () => { tfDraft.title = ti.value; };
+    if (d) {
+      d.oninput = () => { tfDraft.description = d.value; grow(d, 320); };
+      d.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('#tf').requestSubmit(); } };
+      grow(d, 320);
+    }
+    if (fin) fin.onchange = async ev => {
+      const files = [...(ev.target.files || [])]; if (!files.length) return;
+      ev.target.value = '';                                   // 같은 파일을 다시 골라도 change 가 다시 걸린다
+      attBusy = true;
+      const added = await uploadFiles(files);
+      attBusy = false;
+      if (!added.length) return;
+      taskAtts = [...taskAtts, ...added]; paintTfChips();
+      const t = added.filter(x => x.kind === 'text').length;
+      toast(`${added.map(x => x.name).join(', ')} 첨부 준비 완료 · ${t}개는 본문, ${added.length - t}개는 경로가 지시문에 실립니다`);
+    };
     // 팀별로 묶어 보여준다 — 같은 팀원에게 맡기는 판단을 화면에서 할 수 있게
     const opt = e => `<option value="${e.id}">${esc(e.name)} (${esc(e.rank)})</option>`;
     const claimed = new Set();
@@ -424,7 +546,8 @@ const updaters = {
       ${['todo', 'doing'].includes(x.status) ? ib('이 업무만 멈춤', 'pause', 'x stop', `data-pause="${x.id}"`) : ''}
       ${['paused', 'failed', 'blocked'].includes(x.status) ? ib('다시 할 일로 옮겨 시작', 'play', 'x go', `data-resume="${x.id}"`) : ''}
       <div class="ti">#${x.id} ${esc(x.title)}</div>
-      <div class="sm">${esc(nm(x.assignerId))} → ${esc(nm(x.assigneeId))}</div>${x.description ? `<div class="sm">${esc(x.description)}</div>` : ''}
+      <div class="sm">${esc(nm(x.assignerId))} → ${esc(nm(x.assigneeId))}</div>${longText(x.description)}
+      ${x.attachments?.length ? `<div class="atchips">${x.attachments.map(p => attChip(p, '')).join('')}</div>` : ''}
       ${x.error ? `<div class="sm err">${esc(x.error)}</div>` : ''}
       ${x.status === 'blocked' ? '<div class="sm">결재 대기 중 · 오피스의 결재함에서 서명하면 이어갑니다</div>' : ''}
       ${x.result ? `<details><summary>결과 보기</summary>${esc(x.result)}</details>` : ''}</div>`;
@@ -519,7 +642,7 @@ function update() { updaters[tab]?.(); }
 // ---------- 이벤트 ----------
 document.addEventListener('click', async e => {
   if (!$('#modal').classList.contains('hidden')) return;
-  const t = e.target.closest('[data-id],[data-ch],[data-del],[data-done],[data-pause],[data-resume],[data-yes],[data-no],[data-apprs],[data-res],[data-edit],[data-chedit],[data-chdel],[data-team],[data-teamdel],[data-clearkey],[data-mcpdel],[data-mcpgrant],#newCh,#addEmp,#addTeam,#saveRanks,#saveSet,#saveCfg,#saveSearch,#searchTest,#mcpAdd,#clearLogs,#saveMcp,#recon,#banHide,#logoDel');
+  const t = e.target.closest('[data-id],[data-ch],[data-del],[data-done],[data-pause],[data-resume],[data-yes],[data-no],[data-apprs],[data-res],[data-edit],[data-chedit],[data-chdel],[data-team],[data-teamdel],[data-clearkey],[data-mcpdel],[data-mcpgrant],[data-rundetach],[data-tfdetach],#newCh,#addEmp,#addTeam,#saveRanks,#saveSet,#saveCfg,#saveSearch,#searchTest,#mcpAdd,#clearLogs,#saveMcp,#recon,#banHide,#logoDel');
   if (!t) return;
   if (t.dataset.id && tab === 'office') { chan = dm('user', t.dataset.id); $('#tabs [data-tab=chat]').click(); }
   else if (t.dataset.ch) { chan = t.dataset.ch; update(); }
@@ -554,6 +677,13 @@ document.addEventListener('click', async e => {
   }
   else if (t.id === 'clearLogs') api('DELETE', '/api/logs');
   else if (t.id === 'logoDel') { logoDraft = ''; paintLogoPrev(); toast('로고를 지웠습니다 · 아래 "전역 설정 저장"을 눌러야 실제로 사라집니다'); }
+  // 이번 가동의 첨부 = 서버 목록이 정답. 빼면 즉시 저장해 다른 창과 어긋나지 않게 한다.
+  else if (t.dataset.rundetach) {
+    const list = (S.company.attachments || []).filter(x => x.id !== t.dataset.rundetach);
+    await api('PUT', '/api/company', { attachments: list });
+    S.company.attachments = list; paintRunAtts(); toast('첨부를 뺐습니다 · 이미 직원에게 전달된 지시는 되돌리지 않습니다');
+  }
+  else if (t.dataset.tfdetach) { taskAtts = taskAtts.filter(x => x.id !== t.dataset.tfdetach); paintTfChips(); }
   else if (t.id === 'saveSet') {
     const keys = {}; document.querySelectorAll('[data-key]').forEach(i => { if (i.value) { keys[i.dataset.key] = i.value; i.value = ''; } });
     const n = Object.keys(keys).length;
@@ -636,7 +766,16 @@ document.addEventListener('change', async e => {
 
 document.addEventListener('submit', async e => {
   e.preventDefault();
-  if (e.target.id === 'tf') { await api('POST', '/api/tasks', Object.fromEntries(new FormData(e.target))); e.target.reset(); }
+  if (e.target.id === 'tf') {
+    if (attBusy) { toast('첨부 업로드가 끝나지 않았습니다 · 잠시 뒤 다시 지시하세요', 'err'); return; }
+    const f = e.target, d = Object.fromEntries(new FormData(f));
+    const r = await api('POST', '/api/tasks', { ...d, attachments: taskAtts });
+    if (!r?.id) return;                                       // 실패한 지시는 입력 내용을 지우지 않는다
+    if (String(d.description || '').length >= 60000) toast('지시가 6만 자를 넘어 잘렸습니다 · 파일로 첨부하면 전체가 전달됩니다', 'err');
+    f.reset(); tfDraft = { title: '', description: '' }; taskAtts = []; paintTfChips();
+    grow($('#tfDesc'), 320);
+    toast(`업무 지시 · #${r.id} ${r.title}${r.attachments?.length ? ` · 첨부 ${r.attachments.length}개` : ''}`);
+  }
   if (e.target.id === 'send') { const i = $('#msgIn'); if (!i.value.trim()) return; const text = i.value; i.value = ''; await api('POST', '/api/messages', { channel: chan, text }); }
 });
 

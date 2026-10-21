@@ -3,13 +3,14 @@ import http from 'http';
 import fs from 'fs';
 import path from 'path';
 import { WebSocketServer } from 'ws';
-import { state, changed, publicState, onEvent, screens, uid, postMessage, leader, flush, saveNow, cancelTask, decideApproval, safeReportName, reportDir } from './store.js';
+import { state, changed, publicState, onEvent, screens, uid, postMessage, leader, flush, saveNow, cancelTask, decideApproval, safeReportName, reportDir, saveAttachment, attList, findAttachment, attachmentBlock, uploadDir, pruneUploads, kb } from './store.js';
 import { startEngine, abortAll, stopTask } from './engine.js';
 import { listModels } from './llm.js';
 import { connectMcp, closeAll, resetBrowser, testSearch, mcpServersObj, writeMcpServers } from './tools.js';
 
 const app = express();
-app.use(express.json({ limit: '2mb' }));
+// 첨부 한 장(8MB)을 base64로 올리면 JSON 본문이 약 11MB가 된다
+app.use(express.json({ limit: '20mb' }));
 app.use(express.static('public'));
 
 const server = http.createServer(app);
@@ -49,7 +50,7 @@ const knownMembers = v => Array.isArray(v) ? state.employees.filter(e => v.inclu
 app.get('/api/state', (req, res) => res.json(publicState()));
 
 app.put('/api/settings', (req, res) => {
-  const { keys = {}, clearKeys, search, mcpConfig, userName, companyName, logo, ranks, app: appCfg } = req.body;
+  const { keys = {}, clearKeys, search, mcpConfig, userName, companyName, logo, ranks, theme, app: appCfg } = req.body;
   for (const [k, v] of Object.entries(keys))
     if (typeof v === 'string' && v.trim() && !isMasked(v)) state.settings.keys[k] = v.trim();
   // 마스킹이라 평문을 되돌려 줄 수 없어, 지우는 건 명시 요청으로만 받는다
@@ -65,6 +66,8 @@ app.put('/api/settings', (req, res) => {
   if (companyName) state.company.name = companyName;
   // 로고는 브라우저가 줄인 data URL만 받는다. '' 은 삭제 요청이며, 이미지는 마스킹 대상이 아니라 그대로 비교할 수 있다.
   if (typeof logo === 'string') state.company.logo = logo && IMAGE.test(logo) ? logo : '';
+  // 화면 테마는 ''(시스템 따름)·light·dark만 인정한다. 다른 값은 조용히 ''로 되돌린다.
+  if (typeof theme === 'string') state.settings.theme = ['light', 'dark'].includes(theme) ? theme : '';
   if (Array.isArray(ranks) && ranks.length) state.ranks = ranks;
   if (appCfg && typeof appCfg === 'object') {
     const a = state.settings.app, wasHeadless = a.headless;
@@ -169,9 +172,34 @@ app.post('/api/models', async (req, res) => {
   catch (e) { res.status(502).json({ error: String(e.message || e) }); }
 });
 
+// ---------- 업무 명령 첨부 ----------
+// 브라우저가 base64로 올린 파일을 uploads/ 에 쓰고 메타정보만 돌려준다. 본문은 data.json에 들어가지 않는다.
+app.post('/api/attachments', (req, res) => {
+  const { name, mime, data } = req.body || {};
+  let buf;
+  try { buf = Buffer.from(String(data || ''), 'base64'); } catch { buf = null; }
+  if (!buf?.length) return res.status(400).json({ error: '첨부할 파일 본문을 읽지 못했습니다' });
+  try { res.json(saveAttachment({ name, mime, buf })); }
+  catch (e) { res.status(e.message?.includes('한계') ? 413 : 400).json({ error: e.message }); }
+});
+// 오너가 나중에 다시 열람할 수 있게 첨부 원본을 내려준다. id로 찾되 저장된 경로 밖으로 나가지 않는다.
+app.get('/api/attach/:id', (req, res) => {
+  const a = findAttachment(req.params.id);
+  const f = a?.file ? path.join(uploadDir(), a.file) : null;
+  if (!f || !fs.existsSync(f)) return res.status(404).json({ error: '첨부 파일을 찾을 수 없습니다 (지시 삭제 후 정리됐을 수 있습니다)' });
+  const safe = path.resolve(f);
+  if (!safe.startsWith(path.resolve(uploadDir()) + path.sep)) return res.status(400).json({ error: '첨부 경로가 올바르지 않습니다' });
+  // 헤더 값은 ASCII만 허용된다. 한글 이름은 filename*(RFC 5987)로만 실어야 브라우저가 되살린다.
+  const dl = String(a.name || a.file).replace(/[^\w.\-()]/g, '_');
+  res.setHeader('Content-Disposition', `attachment; filename="${dl}"; filename*=UTF-8''${encodeURIComponent(String(a.name || a.file))}`);
+  fs.createReadStream(safe).pipe(res);
+});
+
 app.put('/api/company', (req, res) => {
   if (typeof req.body.goal === 'string') state.company.goal = req.body.goal;
   if (req.body.name) state.company.name = req.body.name;
+  // 이번 가동에서 대표에게 함께 갈 첨부 목록. 브라우저가 언제나 전체 목록을 보내므로 '' = 전부 제거.
+  if (Array.isArray(req.body.attachments)) { state.company.attachments = attList(req.body.attachments); pruneUploads(); }
   changed(); saveNow(); ok(res);
 });
 app.post('/api/company/start', (req, res) => {
@@ -185,9 +213,13 @@ app.post('/api/company/start', (req, res) => {
   });
   const L = leader();
   const open = state.tasks.some(t => t.status !== 'done');
-  if (L && state.company.goal && !open && !L.inbox.length) {
+  if (L && (state.company.goal || state.company.attachments.length) && !open && !L.inbox.length) {
     L.inbox.push({ from: 'system', channel: null,
-      text: `회사가 가동되었습니다. 회사 목표: "${state.company.goal}"\n대표로서 목표 달성 계획을 세우고, 팀원의 직무·모델 특성을 고려해 assign_task로 업무를 배분하세요. 계획은 send_message로 "전체" 채널에 공유하세요.` });
+      text: `회사가 가동되었습니다. 회사 목표: "${state.company.goal || '(목표 텍스트 없음 · 첨부 파일이 지시)'}"\n대표로서 목표 달성 계획을 세우고, 팀원의 직무·모델 특성을 고려해 assign_task로 업무를 배분하세요. 계획은 send_message로 "전체" 채널에 공유하세요.`
+        + attachmentBlock(state.company.attachments)
+        + (state.company.attachments.length
+          ? '\n\n첨부 내용을 바탕으로 일감을 쪼갤 때, 담당 직원에게 넘기는 업무 설명에 어떤 파일(이름·로컬 경로)을 참고해야 하는지 반드시 적어 주세요. 파일 본문은 그 직원에게 함께 전달됩니다.'
+          : '') });
   }
   changed(); saveNow(); ok(res);
 });
@@ -233,9 +265,13 @@ app.post('/api/employees/:id/reset', (req, res) => {
 });
 
 app.post('/api/tasks', (req, res) => {
-  const { title, description = '', assigneeId } = req.body;
+  const { title, description = '', assigneeId, attachments } = req.body;
   if (!title || !assigneeId) return res.status(400).json({ error: '제목과 담당자가 필요합니다' });
-  const t = { id: uid().slice(0, 5), title, description, assigneeId, assignerId: 'user', status: 'todo', createdAt: Date.now() };
+  const t = { id: uid().slice(0, 5), title: String(title).trim().slice(0, 300),
+    // 길게 쓰는 지시를 잘라 버리면 "저장이 안 됐다"와 구분할 수 없다. 넉넉한 상한만 걸고 화면에 알려준다.
+    description: String(description).slice(0, 60000), assigneeId, assignerId: 'user', status: 'todo', createdAt: Date.now() };
+  const atts = attList(attachments);
+  if (atts.length) t.attachments = atts;
   state.tasks.push(t); changed(); res.json(t);
 });
 app.put('/api/tasks/:id', (req, res) => {
@@ -253,7 +289,7 @@ app.put('/api/tasks/:id', (req, res) => {
 });
 app.delete('/api/tasks/:id', (req, res) => {
   const t = state.tasks.find(x => x.id === req.params.id);
-  if (t) { stopTask(t.id); cancelTask(t); }      // 진행 중이면 그 자리에서 끊고, 취소 사실을 직원에게 알린다
+  if (t) { stopTask(t.id); cancelTask(t); pruneUploads(); }   // 진행 중이면 그 자리에서 끊고, 취소 사실을 직원에게 알린다
   ok(res);
 });
 

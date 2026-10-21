@@ -5,6 +5,14 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Virtual Company</title>
 <link rel="icon" href="data:,">
+<script>
+// CSS가 붙기 전에 테마를 정한다. 서버 상태를 기다리면 하얀 화면이 한 번 깜빡인다.
+try {
+  var t = localStorage.getItem('vc.theme');
+  if (t !== 'light' && t !== 'dark') t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  document.documentElement.dataset.theme = t;
+} catch (e) { document.documentElement.dataset.theme = 'light'; }
+</script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css">
 <link rel="stylesheet" href="/style.css">
 </head>
@@ -12,10 +20,17 @@
 <header class="top">
   <div class="brand"><img id="brandLogo" alt="" hidden><span id="brandName">Virtual Company</span></div>
   <nav class="tabs" id="tabs"></nav>
-  <div class="goalbar">
-    <input id="goal" placeholder="회사 목표를 입력하세요 (예: 국내 AI 에이전트 시장 조사 보고서 작성)">
-    <button id="runBtn" class="run primary" title="업무 시작" aria-label="업무 시작"></button>
+  <div class="goalwrap">
+    <div class="goalbar">
+      <textarea id="goal" rows="1" placeholder="회사 목표를 입력하세요 (예: 국내 AI 에이전트 시장 조사 보고서 작성) · Enter 업무 시작 · Shift+Enter 줄바꿈"></textarea>
+      <label class="ib pickclip" title="업무 명령에 파일 첨부" aria-label="업무 명령에 파일 첨부">
+        <input type="file" id="f_goal" multiple accept=".md,.txt,.csv,.tsv,.json,.jsonl,.yaml,.yml,.xml,.html,.htm,.js,.ts,.py,.java,.c,.cpp,.cs,.go,.rs,.rb,.php,.sh,.bat,.ps1,.sql,.ini,.conf,.toml,.log,.svg,.pdf,.png,.jpg,.jpeg,.webp,.docx,.xlsx,.pptx,.zip" hidden>
+      </label>
+      <button id="runBtn" class="run primary" title="업무 시작" aria-label="업무 시작"></button>
+    </div>
+    <div class="goalatts" id="goalAtts" hidden></div>
   </div>
+  <button id="themeBtn" class="ib themebtn" title="야간 모드로" aria-label="야간 모드로"></button>
 </header>
 <main id="view"></main>
 <div id="modal" class="modal hidden"><div class="sheet" id="sheet"></div></div>

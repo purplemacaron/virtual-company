@@ -1,4 +1,4 @@
-import { state, changed, addLog, postMessage, findEmp, nameOf, completeTask, teamsOf, finishRun } from './store.js';
+import { state, changed, addLog, postMessage, findEmp, nameOf, completeTask, teamsOf, finishRun, attachmentBlock } from './store.js';
 import { chat } from './llm.js';
 import { buildTools, runTool } from './tools.js';
 import { releaseDesktop } from './desktop.js';
@@ -55,7 +55,10 @@ function nextJob(e) {
   if (!t) return null;
   t.status = 'doing'; t.startedAt = Date.now(); delete t.note; changed();
   return { type: 'task', taskId: t.id,
-    prompt: `[업무 배정] #${t.id} ${t.title}\n지시자: ${nameOf(t.assignerId)}\n내용: ${t.description || '-'}\n\n업무를 수행한 뒤 반드시 complete_task(task_id="${t.id}")로 구체적인 결과를 보고하세요.` };
+    // 오너가 지시문에서 잘린 첨부 본문을 여기서 다시 읽어 붙인다. data.json은 메타만 들고 있다.
+    prompt: `[업무 배정] #${t.id} ${t.title}\n지시자: ${nameOf(t.assignerId)}\n내용: ${t.description || '-'}`
+      + attachmentBlock(t.attachments)
+      + `\n\n업무를 수행한 뒤 반드시 complete_task(task_id="${t.id}")로 구체적인 결과를 보고하세요.` };
 }
 
 function setStatus(e, status, activity) { e.status = status; e.activity = activity; changed(); }
